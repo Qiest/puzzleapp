@@ -38,7 +38,6 @@ export function hashStringToSeed(str) {
   return h >>> 0;
 }
 
-// 100 parçalık puzzle
 export function computeGrid(
   imgW,
   imgH,
@@ -112,7 +111,15 @@ export function pieceEdges(
   };
 }
 
-// Daha düzgün ve birbirine daha iyi oturan puzzle kenarı
+/*
+  IMPORTANT:
+  Every shared edge is generated from exactly
+  the same mathematical curve.
+
+  The neighbouring piece receives the opposite
+  bump, so the two edges are exact complements.
+*/
+
 function drawEdge(
   ctx,
   x0,
@@ -128,50 +135,145 @@ function drawEdge(
 
   const dx = x1 - x0;
   const dy = y1 - y0;
-  const len = Math.hypot(dx, dy);
 
-  const ux = dx / len;
-  const uy = dy / len;
+  const length = Math.hypot(dx, dy);
+
+  if (length === 0) {
+    ctx.lineTo(x1, y1);
+    return;
+  }
+
+  const ux = dx / length;
+  const uy = dy / length;
 
   const nx = -uy;
   const ny = ux;
 
-  // Öncekinden biraz daha küçük ve kontrollü çıkıntı
-  const amp = len * 0.18 * bump;
+  /*
+    The tab width and height are based only
+    on the edge length.
 
-  const pt = (t) => ({
-    x: x0 + ux * len * t,
-    y: y0 + uy * len * t,
-  });
-
-  const a = pt(0.32);
-  const b = pt(0.68);
-  const mid = pt(0.5);
-
-  const knobX = mid.x + nx * amp;
-  const knobY = mid.y + ny * amp;
-
-  ctx.lineTo(a.x, a.y);
-
-  ctx.bezierCurveTo(
-    a.x + nx * amp * 0.75,
-    a.y + ny * amp * 0.75,
-    knobX - ux * len * 0.16,
-    knobY - uy * len * 0.16,
-    knobX,
-    knobY
+    Because both neighbouring pieces use
+    the exact same formula, the shapes match.
+  */
+  const tabWidth = length * 0.42;
+  const tabHeight = Math.min(
+    length * 0.20,
+    18
   );
 
+  const start =
+    length * 0.29;
+
+  const end =
+    start + tabWidth;
+
+  const p = (distance) => ({
+    x:
+      x0 +
+      ux * distance,
+
+    y:
+      y0 +
+      uy * distance,
+  });
+
+  const a = p(start);
+  const b = p(end);
+
+  const center =
+    (start + end) / 2;
+
+  const c = p(center);
+
+  const tipX =
+    c.x +
+    nx *
+      tabHeight *
+      bump;
+
+  const tipY =
+    c.y +
+    ny *
+      tabHeight *
+      bump;
+
+  ctx.lineTo(
+    a.x,
+    a.y
+  );
+
+  /*
+    First half of tab.
+  */
   ctx.bezierCurveTo(
-    knobX + ux * len * 0.16,
-    knobY + uy * len * 0.16,
-    b.x + nx * amp * 0.75,
-    b.y + ny * amp * 0.75,
+    a.x +
+      ux *
+        tabWidth *
+        0.10,
+    a.y +
+      uy *
+        tabWidth *
+        0.10,
+
+    a.x +
+      ux *
+        tabWidth *
+        0.20 +
+      nx *
+        tabHeight *
+        bump,
+
+    a.y +
+      uy *
+        tabWidth *
+        0.20 +
+      ny *
+        tabHeight *
+        bump,
+
+    tipX,
+    tipY
+  );
+
+  /*
+    Second half of tab.
+  */
+  ctx.bezierCurveTo(
+    b.x -
+      ux *
+        tabWidth *
+        0.20 +
+      nx *
+        tabHeight *
+        bump,
+
+    b.y -
+      uy *
+        tabWidth *
+        0.20 +
+      ny *
+        tabHeight *
+        bump,
+
+    b.x -
+      ux *
+        tabWidth *
+        0.10,
+
+    b.y -
+      uy *
+        tabWidth *
+        0.10,
+
     b.x,
     b.y
   );
 
-  ctx.lineTo(x1, y1);
+  ctx.lineTo(
+    x1,
+    y1
+  );
 }
 
 export function tracePiecePath(
@@ -183,7 +285,10 @@ export function tracePiecePath(
 ) {
   ctx.beginPath();
 
-  ctx.moveTo(pad, pad);
+  ctx.moveTo(
+    pad,
+    pad
+  );
 
   drawEdge(
     ctx,
@@ -224,7 +329,6 @@ export function tracePiecePath(
   ctx.closePath();
 }
 
-// 100 parçayı daha ferah dağıt
 export function scatterPosition(
   r,
   c,
@@ -242,35 +346,48 @@ export function scatterPosition(
     r * cols + c;
 
   const trayRow =
-    Math.floor(index / trayCols);
+    Math.floor(
+      index / trayCols
+    );
 
   const trayCol =
     index % trayCols;
 
   const cellW =
-    trayWidth / trayCols;
+    trayWidth /
+    trayCols;
+
+  const gap =
+    Math.max(
+      0,
+      cellW -
+        pieceW
+    );
 
   const jitterX =
     (rand() - 0.5) *
-    Math.max(
-      0,
-      (cellW - pieceW) * 0.65
-    );
+    gap *
+    0.55;
 
   const jitterY =
     (rand() - 0.5) *
     pieceH *
-    0.22;
+    0.18;
 
   return {
     x:
-      trayCol * cellW +
-      (cellW - pieceW) / 2 +
+      trayCol *
+        cellW +
+      (cellW -
+        pieceW) /
+        2 +
       jitterX,
 
     y:
       trayTop +
-      trayRow * pieceH * 1.18 +
+      trayRow *
+        pieceH *
+        1.22 +
       jitterY,
   };
 }
@@ -285,7 +402,8 @@ export function makeRoomCode() {
     code +=
       chars[
         Math.floor(
-          Math.random() * chars.length
+          Math.random() *
+            chars.length
         )
       ];
   }

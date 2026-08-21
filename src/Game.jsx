@@ -67,6 +67,9 @@ export default function Game({
   const [copied, setCopied] =
     useState(false);
 
+  const [finished, setFinished] =
+    useState(false);
+
   const canvasRef =
     useRef(null);
 
@@ -137,6 +140,13 @@ export default function Game({
         partner,
         total,
       });
+
+      if (
+        total > 0 &&
+        mine === total
+      ) {
+        setFinished(true);
+      }
     }, [playerId]);
 
   useEffect(() => {
@@ -197,9 +207,7 @@ export default function Game({
             ?.color ||
           COLORS.find(
             (c) =>
-              !usedColors.includes(
-                c
-              )
+              !usedColors.includes(c)
           ) ||
           COLORS[0];
 
@@ -431,12 +439,10 @@ export default function Game({
             );
 
           pc.width =
-            pieceW +
-            PAD * 2;
+            pieceW + PAD * 2;
 
           pc.height =
-            pieceH +
-            PAD * 2;
+            pieceH + PAD * 2;
 
           const ctx =
             pc.getContext(
@@ -480,9 +486,7 @@ export default function Game({
             edges
           );
 
-          ctx.lineWidth =
-            1.1;
-
+          ctx.lineWidth = 1.1;
           ctx.strokeStyle =
             "rgba(60,40,50,0.32)";
 
@@ -498,12 +502,10 @@ export default function Game({
         }
       }
 
-      dirtyRef.current =
-        true;
+      dirtyRef.current = true;
     };
 
-    img.src =
-      image;
+    img.src = image;
   }, [room]);
 
   useEffect(() => {
@@ -521,43 +523,32 @@ export default function Game({
 
         if (
           draggingRef.current &&
-          draggingRef.current
-            .key === key
+          draggingRef.current.key === key
         ) {
           return;
         }
 
         const previous =
-          piecesRef.current[
-            key
-          ];
+          piecesRef.current[key];
 
-        piecesRef.current[
-          key
-        ] = p;
+        piecesRef.current[key] = p;
 
         if (
           initializedRef.current &&
           p.movedBy &&
-          p.movedBy !==
-            playerId &&
+          p.movedBy !== playerId &&
           p.movedAt &&
           (!previous?.movedAt ||
             p.movedAt >
               previous.movedAt)
         ) {
-          highlightRef.current =
-            {
-              key,
-              until:
-                Date.now() +
-                900,
-            };
+          highlightRef.current = {
+            key,
+            until: Date.now() + 900,
+          };
 
           const moverName =
-            players[
-              p.movedBy
-            ]?.name ||
+            players[p.movedBy]?.name ||
             "Diğer oyuncu";
 
           setToast(
@@ -569,16 +560,12 @@ export default function Game({
           );
 
           window.__toastTimer =
-            setTimeout(
-              () => {
-                setToast("");
-              },
-              1300
-            );
+            setTimeout(() => {
+              setToast("");
+            }, 1300);
         }
 
-        dirtyRef.current =
-          true;
+        dirtyRef.current = true;
       };
 
     const addedCb =
@@ -594,8 +581,7 @@ export default function Game({
             Object.keys(
               piecesRef.current
             ).length >=
-            room.rows *
-              room.cols
+            room.rows * room.cols
           ) {
             initializedRef.current =
               true;
@@ -644,9 +630,7 @@ export default function Game({
 
     function draw() {
       raf =
-        requestAnimationFrame(
-          draw
-        );
+        requestAnimationFrame(draw);
 
       if (
         !dirtyRef.current ||
@@ -655,8 +639,7 @@ export default function Game({
         return;
       }
 
-      dirtyRef.current =
-        false;
+      dirtyRef.current = false;
 
       const canvas =
         canvasRef.current;
@@ -777,28 +760,20 @@ export default function Game({
 
       keys.sort(
         (a, b) =>
-          (zOrderRef.current[
-            a
-          ] || 0) -
-          (zOrderRef.current[
-            b
-          ] || 0)
+          (zOrderRef.current[a] || 0) -
+          (zOrderRef.current[b] || 0)
       );
 
       for (
         const key of keys
       ) {
         const p =
-          piecesRef.current[
-            key
-          ];
+          piecesRef.current[key];
 
         if (!p) continue;
 
         const bmp =
-          pieceCanvasesRef.current[
-            key
-          ];
+          pieceCanvasesRef.current[key];
 
         if (!bmp) continue;
 
@@ -828,19 +803,12 @@ export default function Game({
           p.placedBy
         ) {
           const color =
-            players[
-              p.placedBy
-            ]?.color ||
+            players[p.placedBy]?.color ||
             "#ff6f9c";
 
           ctx.save();
-
-          ctx.globalAlpha =
-            0.4;
-
-          ctx.strokeStyle =
-            color;
-
+          ctx.globalAlpha = 0.4;
+          ctx.strokeStyle = color;
           ctx.lineWidth = 2;
 
           ctx.strokeRect(
@@ -854,35 +822,26 @@ export default function Game({
         }
 
         if (
-          highlightRef.current
-            .key === key &&
+          highlightRef.current.key === key &&
           Date.now() <
-            highlightRef.current
-              .until
+            highlightRef.current.until
         ) {
           ctx.save();
 
-          ctx.strokeStyle =
-            "#ffd166";
-
+          ctx.strokeStyle = "#ffd166";
           ctx.lineWidth = 3;
           ctx.globalAlpha = 0.85;
 
           ctx.strokeRect(
-            p.x -
-              PAD * 0.6,
-            p.y -
-              PAD * 0.6,
-            pieceW +
-              PAD * 1.2,
-            pieceH +
-              PAD * 1.2
+            p.x - PAD * 0.6,
+            p.y - PAD * 0.6,
+            pieceW + PAD * 1.2,
+            pieceH + PAD * 1.2
           );
 
           ctx.restore();
 
-          dirtyRef.current =
-            true;
+          dirtyRef.current = true;
         }
       }
     }
@@ -890,115 +849,77 @@ export default function Game({
     draw();
 
     return () => {
-      cancelAnimationFrame(
-        raf
-      );
+      cancelAnimationFrame(raf);
     };
-  }, [
-    room,
-    players,
-  ]);
+  }, [room, players]);
 
-  function handlePointerDown(
-    e
-  ) {
+  function handlePointerDown(e) {
     const canvas =
       canvasRef.current;
 
-    if (!canvas || !room)
-      return;
+    if (!canvas || !room) return;
 
     const rect =
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width /
-      rect.width;
+      canvas.width / rect.width;
 
     const scaleY =
-      canvas.height /
-      rect.height;
+      canvas.height / rect.height;
 
     const px =
-      (e.clientX -
-        rect.left) *
+      (e.clientX - rect.left) *
       scaleX;
 
     const py =
-      (e.clientY -
-        rect.top) *
+      (e.clientY - rect.top) *
       scaleY;
 
     const {
       cols,
       boardW,
       boardH,
-      rows,
     } = room;
 
     const pieceW =
       boardW / cols;
 
     const pieceH =
-      boardH / rows;
+      boardH / room.rows;
 
     const keys =
       Object.keys(
         piecesRef.current
       ).sort(
         (a, b) =>
-          (zOrderRef.current[
-            b
-          ] || 0) -
-          (zOrderRef.current[
-            a
-          ] || 0)
+          (zOrderRef.current[b] || 0) -
+          (zOrderRef.current[a] || 0)
       );
 
     for (
       const key of keys
     ) {
       const p =
-        piecesRef.current[
-          key
-        ];
+        piecesRef.current[key];
+
+      if (!p || p.placed) continue;
 
       if (
-        !p ||
-        p.placed
+        px >= p.x - PAD &&
+        px <= p.x + pieceW + PAD &&
+        py >= p.y - PAD &&
+        py <= p.y + pieceH + PAD
       ) {
-        continue;
-      }
+        draggingRef.current = {
+          key,
+          offsetX: px - p.x,
+          offsetY: py - p.y,
+        };
 
-      if (
-        px >=
-          p.x - PAD &&
-        px <=
-          p.x +
-            pieceW +
-            PAD &&
-        py >=
-          p.y - PAD &&
-        py <=
-          p.y +
-            pieceH +
-            PAD
-      ) {
-        draggingRef.current =
-          {
-            key,
-            offsetX:
-              px - p.x,
-            offsetY:
-              py - p.y,
-          };
+        zCounterRef.current += 1;
 
-        zCounterRef.current +=
-          1;
-
-        zOrderRef.current[
-          key
-        ] =
+        zOrderRef.current[key] =
           zCounterRef.current;
 
         canvas.setPointerCapture(
@@ -1010,14 +931,11 @@ export default function Game({
     }
   }
 
-  function handlePointerMove(
-    e
-  ) {
+  function handlePointerMove(e) {
     const d =
       draggingRef.current;
 
-    if (!d || !room)
-      return;
+    if (!d || !room) return;
 
     const canvas =
       canvasRef.current;
@@ -1026,67 +944,51 @@ export default function Game({
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width /
-      rect.width;
+      canvas.width / rect.width;
 
     const scaleY =
-      canvas.height /
-      rect.height;
+      canvas.height / rect.height;
 
     const px =
-      (e.clientX -
-        rect.left) *
+      (e.clientX - rect.left) *
       scaleX;
 
     const py =
-      (e.clientY -
-        rect.top) *
+      (e.clientY - rect.top) *
       scaleY;
 
     const p =
-      piecesRef.current[
-        d.key
-      ];
+      piecesRef.current[d.key];
 
     if (!p) return;
 
     const pieceW =
-      room.boardW /
-      room.cols;
+      room.boardW / room.cols;
 
     const pieceH =
-      room.boardH /
-      room.rows;
-
-    // Parçanın ekran dışına kaçmasını engelle
-    const minX = 0;
-    const maxX =
-      canvas.width -
-      pieceW;
-
-    const minY = 0;
-    const maxY =
-      canvas.height -
-      pieceH;
+      room.boardH / room.rows;
 
     p.x = Math.max(
-      minX,
+      -PAD,
       Math.min(
-        maxX,
+        canvas.width -
+          pieceW +
+          PAD,
         px - d.offsetX
       )
     );
 
     p.y = Math.max(
-      minY,
+      -PAD,
       Math.min(
-        maxY,
+        canvas.height -
+          pieceH +
+          PAD,
         py - d.offsetY
       )
     );
 
-    dirtyRef.current =
-      true;
+    dirtyRef.current = true;
 
     const now =
       Date.now();
@@ -1105,25 +1007,17 @@ export default function Game({
           `rooms/${roomCode}/pieces/${d.key}`
         ),
         {
-          x: Math.round(
-            p.x
-          ),
-          y: Math.round(
-            p.y
-          ),
-          movedBy:
-            playerId,
-          movedAt:
-            now,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          movedBy: playerId,
+          movedAt: now,
         }
-      ).catch(
-        (error) => {
-          console.error(
-            "Parça senkronizasyon hatası:",
-            error
-          );
-        }
-      );
+      ).catch((error) => {
+        console.error(
+          "Parça senkronizasyon hatası:",
+          error
+        );
+      });
     }
   }
 
@@ -1131,24 +1025,21 @@ export default function Game({
     const d =
       draggingRef.current;
 
-    if (!d || !room)
-      return;
+    if (!d || !room) return;
 
-    draggingRef.current =
-      null;
+    draggingRef.current = null;
 
     const {
       cols,
       boardW,
       boardH,
-      rows,
     } = room;
 
     const pieceW =
       boardW / cols;
 
     const pieceH =
-      boardH / rows;
+      boardH / room.rows;
 
     const [r, c] =
       d.key
@@ -1162,9 +1053,7 @@ export default function Game({
       r * pieceH;
 
     const p =
-      piecesRef.current[
-        d.key
-      ];
+      piecesRef.current[d.key];
 
     if (!p) return;
 
@@ -1176,52 +1065,39 @@ export default function Game({
 
     const dx =
       Math.abs(
-        p.x -
-          correctX
+        p.x - correctX
       );
 
     const dy =
       Math.abs(
-        p.y -
-          correctY
+        p.y - correctY
       );
 
-    let placed =
-      false;
+    let placed = false;
 
     if (
       dx < threshold &&
       dy < threshold
     ) {
-      p.x =
-        correctX;
-
-      p.y =
-        correctY;
-
-      placed =
-        true;
+      p.x = correctX;
+      p.y = correctY;
+      placed = true;
     }
 
     const now =
       Date.now();
 
-    p.placed =
-      placed;
-
+    p.placed = placed;
     p.placedBy =
       placed
         ? playerId
         : null;
-
     p.movedBy =
       playerId;
-
     p.movedAt =
       now;
 
-    dirtyRef.current =
-      true;
+    dirtyRef.current = true;
 
     updateProgress();
 
@@ -1231,37 +1107,36 @@ export default function Game({
         `rooms/${roomCode}/pieces/${d.key}`
       ),
       {
-        x: Math.round(
-          p.x
-        ),
-        y: Math.round(
-          p.y
-        ),
+        x: Math.round(p.x),
+        y: Math.round(p.y),
         placed,
-        placedBy:
-          p.placedBy,
-        movedBy:
-          playerId,
-        movedAt:
-          now,
+        placedBy: p.placedBy,
+        movedBy: playerId,
+        movedAt: now,
       }
-    ).catch(
-      (error) => {
-        console.error(
-          "Parça bırakma hatası:",
-          error
-        );
-      }
-    );
+    ).catch((error) => {
+      console.error(
+        "Parça bırakma hatası:",
+        error
+      );
+    });
   }
 
-  // Küçük test/şifre butonu:
-  // Kalan parçaları otomatik tamamlar.
   function completePuzzleCheat() {
+    if (!room) return;
+
     const now =
       Date.now();
 
     const updates = {};
+
+    const pieceW =
+      room.boardW /
+      room.cols;
+
+    const pieceH =
+      room.boardH /
+      room.rows;
 
     Object.entries(
       piecesRef.current
@@ -1269,20 +1144,10 @@ export default function Game({
       ([key, p]) => {
         if (!p) return;
 
-        const [
-          r,
-          c,
-        ] = key
-          .split("_")
-          .map(Number);
-
-        const pieceW =
-          room.boardW /
-          room.cols;
-
-        const pieceH =
-          room.boardH /
-          room.rows;
+        const [r, c] =
+          key
+            .split("_")
+            .map(Number);
 
         const x =
           c * pieceW;
@@ -1293,12 +1158,9 @@ export default function Game({
         p.x = x;
         p.y = y;
         p.placed = true;
-        p.placedBy =
-          playerId;
-        p.movedBy =
-          playerId;
-        p.movedAt =
-          now;
+        p.placedBy = playerId;
+        p.movedBy = playerId;
+        p.movedAt = now;
 
         updates[
           `rooms/${roomCode}/pieces/${key}/x`
@@ -1326,31 +1188,19 @@ export default function Game({
       }
     );
 
-    update(
-      ref(db),
-      updates
-    ).catch(
-      (error) => {
+    update(ref(db), updates)
+      .then(() => {
+        setFinished(true);
+        setToast(
+          "Puzzle tamamlandı 🎉"
+        );
+      })
+      .catch((error) => {
         console.error(
           "Puzzle tamamlama hatası:",
           error
         );
-      }
-    );
-
-    dirtyRef.current =
-      true;
-
-    updateProgress();
-
-    setToast(
-      "Puzzle tamamlandı 🎉"
-    );
-
-    setTimeout(
-      () => setToast(""),
-      1800
-    );
+      });
   }
 
   function roundRect(
@@ -1409,15 +1259,12 @@ export default function Game({
       `${window.location.pathname}` +
       `?room=${roomCode}`;
 
-    navigator.clipboard?.writeText(
-      url
-    );
+    navigator.clipboard?.writeText(url);
 
     setCopied(true);
 
     setTimeout(
-      () =>
-        setCopied(false),
+      () => setCopied(false),
       1500
     );
   }
@@ -1426,13 +1273,10 @@ export default function Game({
     return (
       <div className="home">
         <div className="home-card">
-          <h1>
-            Odaya katıl
-          </h1>
+          <h1>Odaya katıl</h1>
 
           <p className="subtitle">
-            Oda kodu:{" "}
-            {roomCode}
+            Oda kodu: {roomCode}
           </p>
 
           <div className="form">
@@ -1442,15 +1286,10 @@ export default function Game({
               </span>
 
               <input
-                value={
-                  nameInput
-                }
-                onChange={(
-                  e
-                ) =>
+                value={nameInput}
+                onChange={(e) =>
                   setNameInput(
-                    e.target
-                      .value
+                    e.target.value
                   )
                 }
                 placeholder="Adın"
@@ -1460,9 +1299,7 @@ export default function Game({
             <button
               className="btn primary"
               onClick={() =>
-                setNeedsName(
-                  false
-                )
+                setNeedsName(false)
               }
             >
               Katıl
@@ -1477,20 +1314,16 @@ export default function Game({
     return (
       <div className="home">
         <div className="home-card">
-          <h1>
-            Bu oda dolu
-          </h1>
+          <h1>Bu oda dolu</h1>
 
           <p className="subtitle">
-            Bu odada zaten
-            iki oyuncu var.
+            Bu odada zaten iki
+            oyuncu var.
           </p>
 
           <button
             className="btn primary"
-            onClick={
-              onLeave
-            }
+            onClick={onLeave}
           >
             Geri dön
           </button>
@@ -1532,7 +1365,7 @@ export default function Game({
     trayTop +
     trayRows *
       pieceH *
-      1.18 +
+      1.22 +
     pieceH * 2;
 
   const total =
@@ -1598,7 +1431,7 @@ export default function Game({
             onClick={
               completePuzzleCheat
             }
-            title="Test amaçlı puzzleı tamamlar"
+            title="Kalan parçaları tamamlar"
           >
             Şifreli puzzleı tamamla
           </button>
@@ -1689,21 +1522,17 @@ export default function Game({
 
       <div className="canvas-wrap">
         <canvas
-          ref={
-            canvasRef
-          }
-          width={
-            canvasWidth
-          }
-          height={
-            canvasHeight
-          }
+          ref={canvasRef}
+          width={canvasWidth}
+          height={canvasHeight}
           style={{
-            width: "100%",
-            maxWidth:
-              canvasWidth,
-            touchAction:
-              "none",
+            display: "block",
+            width: "min(100%, 900px)",
+            height: "auto",
+            maxWidth: "900px",
+            touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
           }}
           onPointerDown={
             handlePointerDown
@@ -1727,6 +1556,77 @@ export default function Game({
         yakın bırakınca
         kilitlenir.
       </p>
+
+      {finished && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            background:
+              "rgba(255,248,250,0.92)",
+            backdropFilter:
+              "blur(8px)",
+          }}
+        >
+          <div
+            style={{
+              width: "min(420px, 100%)",
+              padding: "32px 24px",
+              textAlign: "center",
+              borderRadius: "24px",
+              background: "#fff",
+              border:
+                "1px solid #ead6dd",
+              boxShadow:
+                "0 20px 60px rgba(70,40,50,0.16)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "54px",
+                marginBottom: "10px",
+              }}
+            >
+              🎉
+            </div>
+
+            <h2
+              style={{
+                margin:
+                  "0 0 8px",
+                color: "#4a303b",
+              }}
+            >
+              Puzzle tamamlandı!
+            </h2>
+
+            <p
+              style={{
+                margin:
+                  "0 0 20px",
+                color: "#856d76",
+              }}
+            >
+              Tebrikler, bütün parçaları
+              tamamladın.
+            </p>
+
+            <button
+              className="btn primary"
+              onClick={() =>
+                setFinished(false)
+              }
+            >
+              Puzzle'a dön
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
