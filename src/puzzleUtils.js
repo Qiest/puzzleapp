@@ -38,9 +38,7 @@ export function hashStringToSeed(str) {
   return h >>> 0;
 }
 
-// Tam 100 parçalık puzzle.
-// Görsel yataysa 10 x 10,
-// dikeyse yine 10 x 10 kullanılır.
+// 100 parçalık puzzle
 export function computeGrid(
   imgW,
   imgH,
@@ -114,6 +112,7 @@ export function pieceEdges(
   };
 }
 
+// Daha düzgün ve birbirine daha iyi oturan puzzle kenarı
 function drawEdge(
   ctx,
   x0,
@@ -137,45 +136,37 @@ function drawEdge(
   const nx = -uy;
   const ny = ux;
 
-  const amp = len * 0.22 * bump;
+  // Öncekinden biraz daha küçük ve kontrollü çıkıntı
+  const amp = len * 0.18 * bump;
 
   const pt = (t) => ({
     x: x0 + ux * len * t,
     y: y0 + uy * len * t,
   });
 
-  const a = pt(0.35);
-  const b = pt(0.65);
+  const a = pt(0.32);
+  const b = pt(0.68);
   const mid = pt(0.5);
 
-  const knobX =
-    mid.x + nx * amp;
-
-  const knobY =
-    mid.y + ny * amp;
+  const knobX = mid.x + nx * amp;
+  const knobY = mid.y + ny * amp;
 
   ctx.lineTo(a.x, a.y);
 
   ctx.bezierCurveTo(
-    a.x + nx * amp * 0.7,
-    a.y + ny * amp * 0.7,
-    knobX -
-      ux * len * 0.18,
-    knobY -
-      uy * len * 0.18,
+    a.x + nx * amp * 0.75,
+    a.y + ny * amp * 0.75,
+    knobX - ux * len * 0.16,
+    knobY - uy * len * 0.16,
     knobX,
     knobY
   );
 
   ctx.bezierCurveTo(
-    knobX +
-      ux * len * 0.18,
-    knobY +
-      uy * len * 0.18,
-    b.x +
-      nx * amp * 0.7,
-    b.y +
-      ny * amp * 0.7,
+    knobX + ux * len * 0.16,
+    knobY + uy * len * 0.16,
+    b.x + nx * amp * 0.75,
+    b.y + ny * amp * 0.75,
     b.x,
     b.y
   );
@@ -192,10 +183,7 @@ export function tracePiecePath(
 ) {
   ctx.beginPath();
 
-  ctx.moveTo(
-    pad,
-    pad
-  );
+  ctx.moveTo(pad, pad);
 
   drawEdge(
     ctx,
@@ -236,8 +224,7 @@ export function tracePiecePath(
   ctx.closePath();
 }
 
-// Parçaları daha ferah dağıtır.
-// 100 parça için 5 sütun x 20 satır kullanılır.
+// 100 parçayı daha ferah dağıt
 export function scatterPosition(
   r,
   c,
@@ -255,9 +242,7 @@ export function scatterPosition(
     r * cols + c;
 
   const trayRow =
-    Math.floor(
-      index / trayCols
-    );
+    Math.floor(index / trayCols);
 
   const trayCol =
     index % trayCols;
@@ -265,20 +250,17 @@ export function scatterPosition(
   const cellW =
     trayWidth / trayCols;
 
-  const horizontalGap =
-    Math.max(
-      0,
-      (cellW - pieceW) * 0.75
-    );
-
   const jitterX =
     (rand() - 0.5) *
-    horizontalGap;
+    Math.max(
+      0,
+      (cellW - pieceW) * 0.65
+    );
 
   const jitterY =
     (rand() - 0.5) *
     pieceH *
-    0.28;
+    0.22;
 
   return {
     x:
@@ -288,9 +270,7 @@ export function scatterPosition(
 
     y:
       trayTop +
-      trayRow *
-        pieceH *
-        1.18 +
+      trayRow * pieceH * 1.18 +
       jitterY,
   };
 }
@@ -305,8 +285,7 @@ export function makeRoomCode() {
     code +=
       chars[
         Math.floor(
-          Math.random() *
-            chars.length
+          Math.random() * chars.length
         )
       ];
   }

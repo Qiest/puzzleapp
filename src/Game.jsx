@@ -4,6 +4,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
+
 import {
   ref,
   onValue,
@@ -15,7 +16,9 @@ import {
   off,
   onDisconnect,
 } from "firebase/database";
+
 import { db } from "./firebase.js";
+
 import {
   generateEdges,
   pieceEdges,
@@ -34,9 +37,10 @@ export default function Game({
   pendingJoin,
   onLeave,
 }) {
-  const [needsName, setNeedsName] = useState(
-    pendingJoin && !playerName
-  );
+  const [needsName, setNeedsName] =
+    useState(
+      pendingJoin && !playerName
+    );
 
   const [nameInput, setNameInput] =
     useState("");
@@ -63,7 +67,8 @@ export default function Game({
   const [copied, setCopied] =
     useState(false);
 
-  const canvasRef = useRef(null);
+  const canvasRef =
+    useRef(null);
 
   const piecesRef =
     useRef({});
@@ -134,7 +139,6 @@ export default function Game({
       });
     }, [playerId]);
 
-  // Oyuncuyu odaya bağla
   useEffect(() => {
     if (needsName) return;
 
@@ -148,11 +152,11 @@ export default function Game({
             `rooms/${roomCode}/players`
           );
 
-        const playersSnap =
+        const snap =
           await get(playersRef);
 
         const existing =
-          playersSnap.val() || {};
+          snap.val() || {};
 
         const activePlayers =
           Object.values(
@@ -254,7 +258,6 @@ export default function Game({
     nameInput,
   ]);
 
-  // Odayı yükle
   useEffect(() => {
     if (needsName) return;
 
@@ -288,7 +291,6 @@ export default function Game({
     roomCode,
   ]);
 
-  // Oyuncuları dinle
   useEffect(() => {
     if (needsName) return;
 
@@ -320,7 +322,6 @@ export default function Game({
     roomCode,
   ]);
 
-  // Puzzle parçalarını oluştur
   useEffect(() => {
     if (!room) return;
 
@@ -342,11 +343,12 @@ export default function Game({
     const {
       edgesV,
       edgesH,
-    } = generateEdges(
-      rows,
-      cols,
-      seed
-    );
+    } =
+      generateEdges(
+        rows,
+        cols,
+        seed
+      );
 
     const img =
       new Image();
@@ -429,10 +431,12 @@ export default function Game({
             );
 
           pc.width =
-            pieceW + PAD * 2;
+            pieceW +
+            PAD * 2;
 
           pc.height =
-            pieceH + PAD * 2;
+            pieceH +
+            PAD * 2;
 
           const ctx =
             pc.getContext(
@@ -477,7 +481,7 @@ export default function Game({
           );
 
           ctx.lineWidth =
-            1.25;
+            1.1;
 
           ctx.strokeStyle =
             "rgba(60,40,50,0.32)";
@@ -498,10 +502,10 @@ export default function Game({
         true;
     };
 
-    img.src = image;
+    img.src =
+      image;
   }, [room]);
 
-  // Parça hareketlerini gerçek zamanlı dinle
   useEffect(() => {
     if (!room) return;
 
@@ -554,7 +558,7 @@ export default function Game({
             players[
               p.movedBy
             ]?.name ||
-            "Sevgilin";
+            "Diğer oyuncu";
 
           setToast(
             `${moverName} bir parça oynattı`
@@ -565,7 +569,7 @@ export default function Game({
           );
 
           window.__toastTimer =
-            window.setTimeout(
+            setTimeout(
               () => {
                 setToast("");
               },
@@ -635,7 +639,6 @@ export default function Game({
     updateProgress,
   ]);
 
-  // Canvas çizimi
   useEffect(() => {
     let raf;
 
@@ -693,7 +696,6 @@ export default function Game({
 
       ctx.fill();
 
-      // Çok silik hedef görüntüsü
       const ghost =
         pieceCanvasesRef.current
           .__ghost;
@@ -804,13 +806,11 @@ export default function Game({
 
         if (p.placed) {
           ctx.shadowColor =
-            "rgba(120,90,100,0.20)";
-
+            "rgba(120,90,100,0.18)";
           ctx.shadowBlur = 2;
         } else {
           ctx.shadowColor =
-            "rgba(0,0,0,0.20)";
-
+            "rgba(0,0,0,0.18)";
           ctx.shadowBlur = 4;
           ctx.shadowOffsetY = 1;
         }
@@ -836,7 +836,7 @@ export default function Game({
           ctx.save();
 
           ctx.globalAlpha =
-            0.45;
+            0.4;
 
           ctx.strokeStyle =
             color;
@@ -1050,11 +1050,40 @@ export default function Game({
 
     if (!p) return;
 
-    p.x =
-      px - d.offsetX;
+    const pieceW =
+      room.boardW /
+      room.cols;
 
-    p.y =
-      py - d.offsetY;
+    const pieceH =
+      room.boardH /
+      room.rows;
+
+    // Parçanın ekran dışına kaçmasını engelle
+    const minX = 0;
+    const maxX =
+      canvas.width -
+      pieceW;
+
+    const minY = 0;
+    const maxY =
+      canvas.height -
+      pieceH;
+
+    p.x = Math.max(
+      minX,
+      Math.min(
+        maxX,
+        px - d.offsetX
+      )
+    );
+
+    p.y = Math.max(
+      minY,
+      Math.min(
+        maxY,
+        py - d.offsetY
+      )
+    );
 
     dirtyRef.current =
       true;
@@ -1226,6 +1255,104 @@ export default function Game({
     );
   }
 
+  // Küçük test/şifre butonu:
+  // Kalan parçaları otomatik tamamlar.
+  function completePuzzleCheat() {
+    const now =
+      Date.now();
+
+    const updates = {};
+
+    Object.entries(
+      piecesRef.current
+    ).forEach(
+      ([key, p]) => {
+        if (!p) return;
+
+        const [
+          r,
+          c,
+        ] = key
+          .split("_")
+          .map(Number);
+
+        const pieceW =
+          room.boardW /
+          room.cols;
+
+        const pieceH =
+          room.boardH /
+          room.rows;
+
+        const x =
+          c * pieceW;
+
+        const y =
+          r * pieceH;
+
+        p.x = x;
+        p.y = y;
+        p.placed = true;
+        p.placedBy =
+          playerId;
+        p.movedBy =
+          playerId;
+        p.movedAt =
+          now;
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/x`
+        ] = Math.round(x);
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/y`
+        ] = Math.round(y);
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/placed`
+        ] = true;
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/placedBy`
+        ] = playerId;
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/movedBy`
+        ] = playerId;
+
+        updates[
+          `rooms/${roomCode}/pieces/${key}/movedAt`
+        ] = now;
+      }
+    );
+
+    update(
+      ref(db),
+      updates
+    ).catch(
+      (error) => {
+        console.error(
+          "Puzzle tamamlama hatası:",
+          error
+        );
+      }
+    );
+
+    dirtyRef.current =
+      true;
+
+    updateProgress();
+
+    setToast(
+      "Puzzle tamamlandı 🎉"
+    );
+
+    setTimeout(
+      () => setToast(""),
+      1800
+    );
+  }
+
   function roundRect(
     ctx,
     x,
@@ -1300,7 +1427,7 @@ export default function Game({
       <div className="home">
         <div className="home-card">
           <h1>
-            Odaya katıl 💌
+            Odaya katıl
           </h1>
 
           <p className="subtitle">
@@ -1326,7 +1453,7 @@ export default function Game({
                       .value
                   )
                 }
-                placeholder="Sevgilin"
+                placeholder="Adın"
               />
             </label>
 
@@ -1351,13 +1478,12 @@ export default function Game({
       <div className="home">
         <div className="home-card">
           <h1>
-            Bu oda dolu 🙈
+            Bu oda dolu
           </h1>
 
           <p className="subtitle">
-            Bu puzzle odasında
-            zaten iki oyuncu
-            var.
+            Bu odada zaten
+            iki oyuncu var.
           </p>
 
           <button
@@ -1445,9 +1571,8 @@ export default function Game({
 
   const partnerName =
     partnerEntry
-      ? partnerEntry[1]
-          .name
-      : "Sevgilin (henüz katılmadı)";
+      ? partnerEntry[1].name
+      : "Diğer oyuncu";
 
   return (
     <div className="game">
@@ -1466,6 +1591,16 @@ export default function Game({
             {copied
               ? "Kopyalandı ✓"
               : "Davet linkini kopyala"}
+          </button>
+
+          <button
+            className="btn tiny ghost"
+            onClick={
+              completePuzzleCheat
+            }
+            title="Test amaçlı puzzleı tamamlar"
+          >
+            Şifreli puzzleı tamamla
           </button>
         </div>
 
@@ -1554,8 +1689,12 @@ export default function Game({
 
       <div className="canvas-wrap">
         <canvas
-          ref={canvasRef}
-          width={canvasWidth}
+          ref={
+            canvasRef
+          }
+          width={
+            canvasWidth
+          }
           height={
             canvasHeight
           }
@@ -1586,7 +1725,7 @@ export default function Game({
         tepsiden tahtaya
         sürükle. Doğru yere
         yakın bırakınca
-        kilitlenir 💞
+        kilitlenir.
       </p>
     </div>
   );
