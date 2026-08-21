@@ -25,7 +25,11 @@ import {
   tracePiecePath,
 } from "./puzzleUtils.js";
 
-const PAD = 14;
+// NOT: puzzleUtils.js içindeki tabHeight en fazla 18px'e kadar çıkabiliyor
+// (Math.min(length * 0.20, 18)). PAD bundan küçük olursa çıkıntılar canvas
+// kenarında kırpılıyor ve oyuk/çıkıntı birbirini tam karşılamıyor.
+// Bu yüzden PAD, o maksimum değerden büyük olmalı.
+const PAD = 22;
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
 const FIREBASE_MOVE_INTERVAL = 100;
