@@ -1,4 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import {
   ref,
   onValue,
@@ -17,7 +22,7 @@ import {
   tracePiecePath,
 } from "./puzzleUtils.js";
 
-const PAD = 12;
+const PAD = 14;
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
 const FIREBASE_MOVE_INTERVAL = 100;
@@ -32,50 +37,102 @@ export default function Game({
   const [needsName, setNeedsName] = useState(
     pendingJoin && !playerName
   );
-  const [nameInput, setNameInput] = useState("");
-  const [room, setRoom] = useState(null);
-  const [players, setPlayers] = useState({});
-  const [progress, setProgress] = useState({
-    mine: 0,
-    partner: 0,
-    total: 0,
-  });
-  const [toast, setToast] = useState("");
-  const [full, setFull] = useState(false);
-  const [copied, setCopied] = useState(false);
+
+  const [nameInput, setNameInput] =
+    useState("");
+
+  const [room, setRoom] =
+    useState(null);
+
+  const [players, setPlayers] =
+    useState({});
+
+  const [progress, setProgress] =
+    useState({
+      mine: 0,
+      partner: 0,
+      total: 0,
+    });
+
+  const [toast, setToast] =
+    useState("");
+
+  const [full, setFull] =
+    useState(false);
+
+  const [copied, setCopied] =
+    useState(false);
 
   const canvasRef = useRef(null);
-  const piecesRef = useRef({});
-  const pieceCanvasesRef = useRef({});
-  const zOrderRef = useRef({});
-  const zCounterRef = useRef(1);
-  const draggingRef = useRef(null);
-  const lastFirebaseWriteRef = useRef(0);
-  const initializedRef = useRef(false);
-  const dirtyRef = useRef(true);
-  const highlightRef = useRef({ key: null, until: 0 });
-  const myColorRef = useRef(COLORS[0]);
 
-  const updateProgress = useCallback(() => {
-    const all = Object.values(piecesRef.current);
-    const total = all.length;
+  const piecesRef =
+    useRef({});
 
-    if (!total) return;
+  const pieceCanvasesRef =
+    useRef({});
 
-    const mine = all.filter(
-      (p) => p.placed && p.placedBy === playerId
-    ).length;
+  const zOrderRef =
+    useRef({});
 
-    const partner = all.filter(
-      (p) => p.placed && p.placedBy && p.placedBy !== playerId
-    ).length;
+  const zCounterRef =
+    useRef(1);
 
-    setProgress({
-      mine,
-      partner,
-      total,
+  const draggingRef =
+    useRef(null);
+
+  const lastFirebaseWriteRef =
+    useRef(0);
+
+  const initializedRef =
+    useRef(false);
+
+  const dirtyRef =
+    useRef(true);
+
+  const highlightRef =
+    useRef({
+      key: null,
+      until: 0,
     });
-  }, [playerId]);
+
+  const myColorRef =
+    useRef(COLORS[0]);
+
+  const updateProgress =
+    useCallback(() => {
+      const all =
+        Object.values(
+          piecesRef.current
+        );
+
+      const total =
+        all.length;
+
+      if (!total) return;
+
+      const mine =
+        all.filter(
+          (p) =>
+            p.placed &&
+            p.placedBy ===
+              playerId
+        ).length;
+
+      const partner =
+        all.filter(
+          (p) =>
+            p.placed &&
+            p.placedBy &&
+            p.placedBy !==
+              playerId
+        ).length;
+
+      setProgress({
+        mine,
+        partner,
+        total,
+      });
+    }, [playerId]);
 
   // Oyuncuyu odaya bağla
   useEffect(() => {
@@ -85,63 +142,99 @@ export default function Game({
 
     (async () => {
       try {
-        const playersRef = ref(
-          db,
-          `rooms/${roomCode}/players`
-        );
+        const playersRef =
+          ref(
+            db,
+            `rooms/${roomCode}/players`
+          );
 
-        const playersSnap = await get(playersRef);
-        const existing = playersSnap.val() || {};
+        const playersSnap =
+          await get(playersRef);
 
-        // Sadece gerçekten aktif oyuncuları say.
-        const activePlayers = Object.values(existing).filter(
-          (p) => p?.connected === true
-        );
+        const existing =
+          playersSnap.val() || {};
 
-        // Sadece 2 aktif oyuncu varsa oda dolu.
-        if (!existing[playerId] && activePlayers.length >= 2) {
+        const activePlayers =
+          Object.values(
+            existing
+          ).filter(
+            (p) =>
+              p?.connected === true
+          );
+
+        if (
+          !existing[playerId] &&
+          activePlayers.length >= 2
+        ) {
           if (!cancelled) {
             setFull(true);
           }
+
           return;
         }
 
-        const activeOthers = Object.entries(existing).filter(
-          ([id, p]) =>
-            id !== playerId &&
-            p?.connected === true
-        );
+        const activeOthers =
+          Object.entries(
+            existing
+          ).filter(
+            ([id, p]) =>
+              id !== playerId &&
+              p?.connected === true
+          );
 
-        const usedColors = activeOthers.map(
-          ([, p]) => p?.color
-        );
+        const usedColors =
+          activeOthers.map(
+            ([, p]) =>
+              p?.color
+          );
 
         const myColor =
-          existing[playerId]?.color ||
+          existing[playerId]
+            ?.color ||
           COLORS.find(
-            (c) => !usedColors.includes(c)
+            (c) =>
+              !usedColors.includes(
+                c
+              )
           ) ||
           COLORS[0];
 
-        myColorRef.current = myColor;
+        myColorRef.current =
+          myColor;
 
-        const playerRef = ref(
-          db,
-          `rooms/${roomCode}/players/${playerId}`
+        const playerRef =
+          ref(
+            db,
+            `rooms/${roomCode}/players/${playerId}`
+          );
+
+        await onDisconnect(
+          playerRef
+        ).remove();
+
+        await set(
+          playerRef,
+          {
+            name:
+              (
+                playerName ||
+                nameInput ||
+                "Sen"
+              ).trim() ||
+              "Sen",
+
+            color:
+              myColor,
+
+            connected:
+              true,
+
+            joinedAt:
+              existing[playerId]
+                ?.joinedAt ||
+              Date.now(),
+          }
         );
-
-        await onDisconnect(playerRef).remove();
-
-        await set(playerRef, {
-          name:
-            (playerName || nameInput || "Sen").trim() ||
-            "Sen",
-          color: myColor,
-          connected: true,
-          joinedAt:
-            existing[playerId]?.joinedAt ||
-            Date.now(),
-        });
       } catch (error) {
         console.error(
           "Oyuncu kaydı hatası:",
@@ -167,16 +260,22 @@ export default function Game({
 
     (async () => {
       try {
-        const snap = await get(
-          ref(db, `rooms/${roomCode}`)
-        );
+        const snap =
+          await get(
+            ref(
+              db,
+              `rooms/${roomCode}`
+            )
+          );
 
         if (!snap.exists()) {
           setFull(true);
           return;
         }
 
-        setRoom(snap.val());
+        setRoom(
+          snap.val()
+        );
       } catch (error) {
         console.error(
           "Oda yükleme hatası:",
@@ -184,25 +283,42 @@ export default function Game({
         );
       }
     })();
-  }, [needsName, roomCode]);
+  }, [
+    needsName,
+    roomCode,
+  ]);
 
   // Oyuncuları dinle
   useEffect(() => {
     if (needsName) return;
 
-    const playersRef = ref(
-      db,
-      `rooms/${roomCode}/players`
-    );
+    const playersRef =
+      ref(
+        db,
+        `rooms/${roomCode}/players`
+      );
 
-    const cb = onValue(playersRef, (snap) => {
-      setPlayers(snap.val() || {});
-    });
+    const cb =
+      onValue(
+        playersRef,
+        (snap) => {
+          setPlayers(
+            snap.val() || {}
+          );
+        }
+      );
 
     return () => {
-      off(playersRef, "value", cb);
+      off(
+        playersRef,
+        "value",
+        cb
+      );
     };
-  }, [needsName, roomCode]);
+  }, [
+    needsName,
+    roomCode,
+  ]);
 
   // Puzzle parçalarını oluştur
   useEffect(() => {
@@ -217,23 +333,41 @@ export default function Game({
       image,
     } = room;
 
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const pieceW =
+      boardW / cols;
 
-    const { edgesV, edgesH } = generateEdges(
+    const pieceH =
+      boardH / rows;
+
+    const {
+      edgesV,
+      edgesH,
+    } = generateEdges(
       rows,
       cols,
       seed
     );
 
-    const img = new Image();
+    const img =
+      new Image();
 
     img.onload = () => {
-      const padded = document.createElement("canvas");
-      padded.width = boardW + PAD * 2;
-      padded.height = boardH + PAD * 2;
+      const padded =
+        document.createElement(
+          "canvas"
+        );
 
-      const pctx = padded.getContext("2d");
+      padded.width =
+        boardW + PAD * 2;
+
+      padded.height =
+        boardH + PAD * 2;
+
+      const pctx =
+        padded.getContext(
+          "2d"
+        );
+
       pctx.drawImage(
         img,
         PAD,
@@ -242,34 +376,68 @@ export default function Game({
         boardH
       );
 
-      const ghost = document.createElement("canvas");
-      ghost.width = boardW;
-      ghost.height = boardH;
+      const ghost =
+        document.createElement(
+          "canvas"
+        );
+
+      ghost.width =
+        boardW;
+
+      ghost.height =
+        boardH;
 
       ghost
         .getContext("2d")
-        .drawImage(img, 0, 0, boardW, boardH);
+        .drawImage(
+          img,
+          0,
+          0,
+          boardW,
+          boardH
+        );
 
-      pieceCanvasesRef.current.__ghost = ghost;
+      pieceCanvasesRef.current.__ghost =
+        ghost;
 
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const key = `${r}_${c}`;
+      for (
+        let r = 0;
+        r < rows;
+        r++
+      ) {
+        for (
+          let c = 0;
+          c < cols;
+          c++
+        ) {
+          const key =
+            `${r}_${c}`;
 
-          const edges = pieceEdges(
-            r,
-            c,
-            rows,
-            cols,
-            edgesV,
-            edgesH
-          );
+          const edges =
+            pieceEdges(
+              r,
+              c,
+              rows,
+              cols,
+              edgesV,
+              edgesH
+            );
 
-          const pc = document.createElement("canvas");
-          pc.width = pieceW + PAD * 2;
-          pc.height = pieceH + PAD * 2;
+          const pc =
+            document.createElement(
+              "canvas"
+            );
 
-          const ctx = pc.getContext("2d");
+          pc.width =
+            pieceW + PAD * 2;
+
+          pc.height =
+            pieceH + PAD * 2;
+
+          const ctx =
+            pc.getContext(
+              "2d"
+            );
 
           tracePiecePath(
             ctx,
@@ -286,12 +454,16 @@ export default function Game({
             padded,
             c * pieceW,
             r * pieceH,
-            pieceW + PAD * 2,
-            pieceH + PAD * 2,
+            pieceW +
+              PAD * 2,
+            pieceH +
+              PAD * 2,
             0,
             0,
-            pieceW + PAD * 2,
-            pieceH + PAD * 2
+            pieceW +
+              PAD * 2,
+            pieceH +
+              PAD * 2
           );
 
           ctx.restore();
@@ -304,16 +476,26 @@ export default function Game({
             edges
           );
 
-          ctx.lineWidth = 1.15;
-          ctx.strokeStyle = "rgba(60,40,50,0.32)";
+          ctx.lineWidth =
+            1.25;
+
+          ctx.strokeStyle =
+            "rgba(60,40,50,0.32)";
+
           ctx.stroke();
 
-          pieceCanvasesRef.current[key] = pc;
-          zOrderRef.current[key] = 0;
+          pieceCanvasesRef.current[
+            key
+          ] = pc;
+
+          zOrderRef.current[
+            key
+          ] = 0;
         }
       }
 
-      dirtyRef.current = true;
+      dirtyRef.current =
+        true;
     };
 
     img.src = image;
@@ -323,75 +505,114 @@ export default function Game({
   useEffect(() => {
     if (!room) return;
 
-    const piecesRef2 = ref(
-      db,
-      `rooms/${roomCode}/pieces`
-    );
+    const piecesRef2 =
+      ref(
+        db,
+        `rooms/${roomCode}/pieces`
+      );
 
-    const handlePiece = (key, p) => {
-      if (!p) return;
-
-      if (
-        draggingRef.current &&
-        draggingRef.current.key === key
-      ) {
-        return;
-      }
-
-      const previous = piecesRef.current[key];
-      piecesRef.current[key] = p;
-
-      if (
-        initializedRef.current &&
-        p.movedBy &&
-        p.movedBy !== playerId &&
-        p.movedAt &&
-        (!previous?.movedAt ||
-          p.movedAt > previous.movedAt)
-      ) {
-        highlightRef.current = {
-          key,
-          until: Date.now() + 900,
-        };
-
-        const moverName =
-          players[p.movedBy]?.name ||
-          "Sevgilin";
-
-        setToast(`${moverName} bir parça oynattı`);
-
-        clearTimeout(window.__toastTimer);
-
-        window.__toastTimer = window.setTimeout(() => {
-          setToast("");
-        }, 1300);
-      }
-
-      dirtyRef.current = true;
-    };
-
-    const addedCb = onChildAdded(
-      piecesRef2,
-      (snap) => {
-        handlePiece(snap.key, snap.val());
+    const handlePiece =
+      (key, p) => {
+        if (!p) return;
 
         if (
-          Object.keys(piecesRef.current).length >=
-          room.rows * room.cols
+          draggingRef.current &&
+          draggingRef.current
+            .key === key
         ) {
-          initializedRef.current = true;
+          return;
+        }
+
+        const previous =
+          piecesRef.current[
+            key
+          ];
+
+        piecesRef.current[
+          key
+        ] = p;
+
+        if (
+          initializedRef.current &&
+          p.movedBy &&
+          p.movedBy !==
+            playerId &&
+          p.movedAt &&
+          (!previous?.movedAt ||
+            p.movedAt >
+              previous.movedAt)
+        ) {
+          highlightRef.current =
+            {
+              key,
+              until:
+                Date.now() +
+                900,
+            };
+
+          const moverName =
+            players[
+              p.movedBy
+            ]?.name ||
+            "Sevgilin";
+
+          setToast(
+            `${moverName} bir parça oynattı`
+          );
+
+          clearTimeout(
+            window.__toastTimer
+          );
+
+          window.__toastTimer =
+            window.setTimeout(
+              () => {
+                setToast("");
+              },
+              1300
+            );
+        }
+
+        dirtyRef.current =
+          true;
+      };
+
+    const addedCb =
+      onChildAdded(
+        piecesRef2,
+        (snap) => {
+          handlePiece(
+            snap.key,
+            snap.val()
+          );
+
+          if (
+            Object.keys(
+              piecesRef.current
+            ).length >=
+            room.rows *
+              room.cols
+          ) {
+            initializedRef.current =
+              true;
+
+            updateProgress();
+          }
+        }
+      );
+
+    const changedCb =
+      onChildChanged(
+        piecesRef2,
+        (snap) => {
+          handlePiece(
+            snap.key,
+            snap.val()
+          );
+
           updateProgress();
         }
-      }
-    );
-
-    const changedCb = onChildChanged(
-      piecesRef2,
-      (snap) => {
-        handlePiece(snap.key, snap.val());
-        updateProgress();
-      }
-    );
+      );
 
     return () => {
       off(
@@ -419,18 +640,30 @@ export default function Game({
     let raf;
 
     function draw() {
-      raf = requestAnimationFrame(draw);
+      raf =
+        requestAnimationFrame(
+          draw
+        );
 
-      if (!dirtyRef.current || !room) {
+      if (
+        !dirtyRef.current ||
+        !room
+      ) {
         return;
       }
 
-      dirtyRef.current = false;
+      dirtyRef.current =
+        false;
 
-      const canvas = canvasRef.current;
+      const canvas =
+        canvasRef.current;
+
       if (!canvas) return;
 
-      const ctx = canvas.getContext("2d");
+      const ctx =
+        canvas.getContext(
+          "2d"
+        );
 
       const {
         boardW,
@@ -446,7 +679,8 @@ export default function Game({
         canvas.height
       );
 
-      ctx.fillStyle = "#fff5f7";
+      ctx.fillStyle =
+        "#fff5f7";
 
       roundRect(
         ctx,
@@ -461,11 +695,14 @@ export default function Game({
 
       // Çok silik hedef görüntüsü
       const ghost =
-        pieceCanvasesRef.current.__ghost;
+        pieceCanvasesRef.current
+          .__ghost;
 
       if (ghost) {
         ctx.save();
-        ctx.globalAlpha = GHOST_OPACITY;
+
+        ctx.globalAlpha =
+          GHOST_OPACITY;
 
         roundRect(
           ctx,
@@ -477,12 +714,19 @@ export default function Game({
         );
 
         ctx.clip();
-        ctx.drawImage(ghost, 0, 0);
+
+        ctx.drawImage(
+          ghost,
+          0,
+          0
+        );
+
         ctx.restore();
       }
 
       ctx.strokeStyle =
         "rgba(255,111,156,0.28)";
+
       ctx.lineWidth = 2;
 
       roundRect(
@@ -496,43 +740,63 @@ export default function Game({
 
       ctx.stroke();
 
-      const trayTop = boardH + 60;
+      const trayTop =
+        boardH + 50;
 
-      ctx.fillStyle = "#faf3f6";
+      ctx.fillStyle =
+        "#faf3f6";
 
       roundRect(
         ctx,
         0,
         trayTop,
         boardW,
-        canvas.height - trayTop - 10,
+        canvas.height -
+          trayTop -
+          10,
         18
       );
 
       ctx.fill();
 
-      const pieceW = boardW / cols;
-      const pieceH = boardH / rows;
+      const pieceW =
+        boardW / cols;
 
-      const keys = Object.keys(
-        pieceCanvasesRef.current
-      ).filter(
-        (k) => k !== "__ghost"
-      );
+      const pieceH =
+        boardH / rows;
+
+      const keys =
+        Object.keys(
+          pieceCanvasesRef.current
+        ).filter(
+          (k) =>
+            k !== "__ghost"
+        );
 
       keys.sort(
         (a, b) =>
-          (zOrderRef.current[a] || 0) -
-          (zOrderRef.current[b] || 0)
+          (zOrderRef.current[
+            a
+          ] || 0) -
+          (zOrderRef.current[
+            b
+          ] || 0)
       );
 
-      for (const key of keys) {
-        const p = piecesRef.current[key];
+      for (
+        const key of keys
+      ) {
+        const p =
+          piecesRef.current[
+            key
+          ];
 
         if (!p) continue;
 
         const bmp =
-          pieceCanvasesRef.current[key];
+          pieceCanvasesRef.current[
+            key
+          ];
 
         if (!bmp) continue;
 
@@ -541,10 +805,12 @@ export default function Game({
         if (p.placed) {
           ctx.shadowColor =
             "rgba(120,90,100,0.20)";
+
           ctx.shadowBlur = 2;
         } else {
           ctx.shadowColor =
             "rgba(0,0,0,0.20)";
+
           ctx.shadowBlur = 4;
           ctx.shadowOffsetY = 1;
         }
@@ -557,14 +823,24 @@ export default function Game({
 
         ctx.restore();
 
-        if (p.placed && p.placedBy) {
+        if (
+          p.placed &&
+          p.placedBy
+        ) {
           const color =
-            players[p.placedBy]?.color ||
+            players[
+              p.placedBy
+            ]?.color ||
             "#ff6f9c";
 
           ctx.save();
-          ctx.globalAlpha = 0.45;
-          ctx.strokeStyle = color;
+
+          ctx.globalAlpha =
+            0.45;
+
+          ctx.strokeStyle =
+            color;
+
           ctx.lineWidth = 2;
 
           ctx.strokeRect(
@@ -578,26 +854,35 @@ export default function Game({
         }
 
         if (
-          highlightRef.current.key === key &&
+          highlightRef.current
+            .key === key &&
           Date.now() <
-            highlightRef.current.until
+            highlightRef.current
+              .until
         ) {
           ctx.save();
 
-          ctx.strokeStyle = "#ffd166";
+          ctx.strokeStyle =
+            "#ffd166";
+
           ctx.lineWidth = 3;
           ctx.globalAlpha = 0.85;
 
           ctx.strokeRect(
-            p.x - PAD * 0.6,
-            p.y - PAD * 0.6,
-            pieceW + PAD * 1.2,
-            pieceH + PAD * 1.2
+            p.x -
+              PAD * 0.6,
+            p.y -
+              PAD * 0.6,
+            pieceW +
+              PAD * 1.2,
+            pieceH +
+              PAD * 1.2
           );
 
           ctx.restore();
 
-          dirtyRef.current = true;
+          dirtyRef.current =
+            true;
         }
       }
     }
@@ -605,29 +890,44 @@ export default function Game({
     draw();
 
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(
+        raf
+      );
     };
-  }, [room, players]);
+  }, [
+    room,
+    players,
+  ]);
 
-  function handlePointerDown(e) {
-    const canvas = canvasRef.current;
+  function handlePointerDown(
+    e
+  ) {
+    const canvas =
+      canvasRef.current;
 
-    if (!canvas || !room) return;
+    if (!canvas || !room)
+      return;
 
     const rect =
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width / rect.width;
+      canvas.width /
+      rect.width;
 
     const scaleY =
-      canvas.height / rect.height;
+      canvas.height /
+      rect.height;
 
     const px =
-      (e.clientX - rect.left) * scaleX;
+      (e.clientX -
+        rect.left) *
+      scaleX;
 
     const py =
-      (e.clientY - rect.top) * scaleY;
+      (e.clientY -
+        rect.top) *
+      scaleY;
 
     const {
       cols,
@@ -636,36 +936,69 @@ export default function Game({
       rows,
     } = room;
 
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const pieceW =
+      boardW / cols;
 
-    const keys = Object.keys(
-      piecesRef.current
-    ).sort(
-      (a, b) =>
-        (zOrderRef.current[b] || 0) -
-        (zOrderRef.current[a] || 0)
-    );
+    const pieceH =
+      boardH / rows;
 
-    for (const key of keys) {
-      const p = piecesRef.current[key];
+    const keys =
+      Object.keys(
+        piecesRef.current
+      ).sort(
+        (a, b) =>
+          (zOrderRef.current[
+            b
+          ] || 0) -
+          (zOrderRef.current[
+            a
+          ] || 0)
+      );
 
-      if (!p || p.placed) continue;
+    for (
+      const key of keys
+    ) {
+      const p =
+        piecesRef.current[
+          key
+        ];
 
       if (
-        px >= p.x - PAD &&
-        px <= p.x + pieceW + PAD &&
-        py >= p.y - PAD &&
-        py <= p.y + pieceH + PAD
+        !p ||
+        p.placed
       ) {
-        draggingRef.current = {
-          key,
-          offsetX: px - p.x,
-          offsetY: py - p.y,
-        };
+        continue;
+      }
 
-        zCounterRef.current += 1;
-        zOrderRef.current[key] =
+      if (
+        px >=
+          p.x - PAD &&
+        px <=
+          p.x +
+            pieceW +
+            PAD &&
+        py >=
+          p.y - PAD &&
+        py <=
+          p.y +
+            pieceH +
+            PAD
+      ) {
+        draggingRef.current =
+          {
+            key,
+            offsetX:
+              px - p.x,
+            offsetY:
+              py - p.y,
+          };
+
+        zCounterRef.current +=
+          1;
+
+        zOrderRef.current[
+          key
+        ] =
           zCounterRef.current;
 
         canvas.setPointerCapture(
@@ -677,44 +1010,65 @@ export default function Game({
     }
   }
 
-  function handlePointerMove(e) {
-    const d = draggingRef.current;
+  function handlePointerMove(
+    e
+  ) {
+    const d =
+      draggingRef.current;
 
-    if (!d || !room) return;
+    if (!d || !room)
+      return;
 
-    const canvas = canvasRef.current;
+    const canvas =
+      canvasRef.current;
 
     const rect =
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width / rect.width;
+      canvas.width /
+      rect.width;
 
     const scaleY =
-      canvas.height / rect.height;
+      canvas.height /
+      rect.height;
 
     const px =
-      (e.clientX - rect.left) * scaleX;
+      (e.clientX -
+        rect.left) *
+      scaleX;
 
     const py =
-      (e.clientY - rect.top) * scaleY;
+      (e.clientY -
+        rect.top) *
+      scaleY;
 
-    const p = piecesRef.current[d.key];
+    const p =
+      piecesRef.current[
+        d.key
+      ];
 
     if (!p) return;
 
-    p.x = px - d.offsetX;
-    p.y = py - d.offsetY;
+    p.x =
+      px - d.offsetX;
 
-    dirtyRef.current = true;
+    p.y =
+      py - d.offsetY;
 
-    const now = Date.now();
+    dirtyRef.current =
+      true;
+
+    const now =
+      Date.now();
 
     if (
-      now - lastFirebaseWriteRef.current >=
+      now -
+        lastFirebaseWriteRef.current >=
       FIREBASE_MOVE_INTERVAL
     ) {
-      lastFirebaseWriteRef.current = now;
+      lastFirebaseWriteRef.current =
+        now;
 
       update(
         ref(
@@ -722,26 +1076,37 @@ export default function Game({
           `rooms/${roomCode}/pieces/${d.key}`
         ),
         {
-          x: Math.round(p.x),
-          y: Math.round(p.y),
-          movedBy: playerId,
-          movedAt: now,
+          x: Math.round(
+            p.x
+          ),
+          y: Math.round(
+            p.y
+          ),
+          movedBy:
+            playerId,
+          movedAt:
+            now,
         }
-      ).catch((error) => {
-        console.error(
-          "Parça senkronizasyon hatası:",
-          error
-        );
-      });
+      ).catch(
+        (error) => {
+          console.error(
+            "Parça senkronizasyon hatası:",
+            error
+          );
+        }
+      );
     }
   }
 
   function handlePointerUp() {
-    const d = draggingRef.current;
+    const d =
+      draggingRef.current;
 
-    if (!d || !room) return;
+    if (!d || !room)
+      return;
 
-    draggingRef.current = null;
+    draggingRef.current =
+      null;
 
     const {
       cols,
@@ -750,53 +1115,84 @@ export default function Game({
       rows,
     } = room;
 
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const pieceW =
+      boardW / cols;
 
-    const [r, c] = d.key
-      .split("_")
-      .map(Number);
+    const pieceH =
+      boardH / rows;
 
-    const correctX = c * pieceW;
-    const correctY = r * pieceH;
+    const [r, c] =
+      d.key
+        .split("_")
+        .map(Number);
 
-    const p = piecesRef.current[d.key];
+    const correctX =
+      c * pieceW;
+
+    const correctY =
+      r * pieceH;
+
+    const p =
+      piecesRef.current[
+        d.key
+      ];
 
     if (!p) return;
 
     const threshold =
-      Math.min(pieceW, pieceH) * 0.4;
+      Math.min(
+        pieceW,
+        pieceH
+      ) * 0.4;
 
-    const dx = Math.abs(
-      p.x - correctX
-    );
+    const dx =
+      Math.abs(
+        p.x -
+          correctX
+      );
 
-    const dy = Math.abs(
-      p.y - correctY
-    );
+    const dy =
+      Math.abs(
+        p.y -
+          correctY
+      );
 
-    let placed = false;
+    let placed =
+      false;
 
     if (
       dx < threshold &&
       dy < threshold
     ) {
-      p.x = correctX;
-      p.y = correctY;
-      placed = true;
+      p.x =
+        correctX;
+
+      p.y =
+        correctY;
+
+      placed =
+        true;
     }
 
-    const now = Date.now();
+    const now =
+      Date.now();
 
-    p.placed = placed;
-    p.placedBy = placed
-      ? playerId
-      : null;
+    p.placed =
+      placed;
 
-    p.movedBy = playerId;
-    p.movedAt = now;
+    p.placedBy =
+      placed
+        ? playerId
+        : null;
 
-    dirtyRef.current = true;
+    p.movedBy =
+      playerId;
+
+    p.movedAt =
+      now;
+
+    dirtyRef.current =
+      true;
 
     updateProgress();
 
@@ -806,19 +1202,28 @@ export default function Game({
         `rooms/${roomCode}/pieces/${d.key}`
       ),
       {
-        x: Math.round(p.x),
-        y: Math.round(p.y),
+        x: Math.round(
+          p.x
+        ),
+        y: Math.round(
+          p.y
+        ),
         placed,
-        placedBy: p.placedBy,
-        movedBy: playerId,
-        movedAt: now,
+        placedBy:
+          p.placedBy,
+        movedBy:
+          playerId,
+        movedAt:
+          now,
       }
-    ).catch((error) => {
-      console.error(
-        "Parça bırakma hatası:",
-        error
-      );
-    });
+    ).catch(
+      (error) => {
+        console.error(
+          "Parça bırakma hatası:",
+          error
+        );
+      }
+    );
   }
 
   function roundRect(
@@ -831,7 +1236,10 @@ export default function Game({
   ) {
     ctx.beginPath();
 
-    ctx.moveTo(x + r, y);
+    ctx.moveTo(
+      x + r,
+      y
+    );
 
     ctx.arcTo(
       x + w,
@@ -874,12 +1282,15 @@ export default function Game({
       `${window.location.pathname}` +
       `?room=${roomCode}`;
 
-    navigator.clipboard?.writeText(url);
+    navigator.clipboard?.writeText(
+      url
+    );
 
     setCopied(true);
 
     setTimeout(
-      () => setCopied(false),
+      () =>
+        setCopied(false),
       1500
     );
   }
@@ -888,20 +1299,32 @@ export default function Game({
     return (
       <div className="home">
         <div className="home-card">
-          <h1>Odaya katıl 💌</h1>
+          <h1>
+            Odaya katıl 💌
+          </h1>
 
           <p className="subtitle">
-            Oda kodu: {roomCode}
+            Oda kodu:{" "}
+            {roomCode}
           </p>
 
           <div className="form">
             <label className="field">
-              <span>Adın (opsiyonel)</span>
+              <span>
+                Adın (opsiyonel)
+              </span>
 
               <input
-                value={nameInput}
-                onChange={(e) =>
-                  setNameInput(e.target.value)
+                value={
+                  nameInput
+                }
+                onChange={(
+                  e
+                ) =>
+                  setNameInput(
+                    e.target
+                      .value
+                  )
                 }
                 placeholder="Sevgilin"
               />
@@ -910,7 +1333,9 @@ export default function Game({
             <button
               className="btn primary"
               onClick={() =>
-                setNeedsName(false)
+                setNeedsName(
+                  false
+                )
               }
             >
               Katıl
@@ -925,15 +1350,21 @@ export default function Game({
     return (
       <div className="home">
         <div className="home-card">
-          <h1>Bu oda dolu 🙈</h1>
+          <h1>
+            Bu oda dolu 🙈
+          </h1>
 
           <p className="subtitle">
-            Bu puzzle odasında zaten iki oyuncu var.
+            Bu puzzle odasında
+            zaten iki oyuncu
+            var.
           </p>
 
           <button
             className="btn primary"
-            onClick={onLeave}
+            onClick={
+              onLeave
+            }
           >
             Geri dön
           </button>
@@ -954,41 +1385,69 @@ export default function Game({
     );
   }
 
-  const canvasWidth = room.boardW;
-  const trayTop = room.boardH + 60;
-  const pieceH = room.boardH / room.rows;
+  const canvasWidth =
+    room.boardW;
+
+  const trayTop =
+    room.boardH + 50;
+
+  const pieceH =
+    room.boardH /
+    room.rows;
+
+  const trayRows =
+    Math.ceil(
+      (room.rows *
+        room.cols) /
+        5
+    );
 
   const canvasHeight =
     trayTop +
-    room.rows * pieceH * 1.15 +
+    trayRows *
+      pieceH *
+      1.18 +
     pieceH * 2;
 
   const total =
     progress.total ||
-    room.rows * room.cols;
+    room.rows *
+      room.cols;
 
-  const minePct = total
-    ? Math.round(
-        (progress.mine / total) * 100
-      )
-    : 0;
+  const minePct =
+    total
+      ? Math.round(
+          (progress.mine /
+            total) *
+            100
+        )
+      : 0;
 
-  const partnerPct = total
-    ? Math.round(
-        (progress.partner / total) * 100
-      )
-    : 0;
+  const partnerPct =
+    total
+      ? Math.round(
+          (progress.partner /
+            total) *
+            100
+        )
+      : 0;
 
-  const me = players[playerId];
+  const me =
+    players[playerId];
 
   const partnerEntry =
-    Object.entries(players).find(
-      ([id]) => id !== playerId
+    Object.entries(
+      players
+    ).find(
+      ([id]) =>
+        id !== playerId
     );
 
-  const partnerName = partnerEntry
-    ? partnerEntry[1].name
-    : "Sevgilin (henüz katılmadı)";
+  const partnerName =
+    partnerEntry
+      ? partnerEntry[1]
+          .name
+      : "Sevgilin (henüz katılmadı)";
 
   return (
     <div className="game">
@@ -1000,7 +1459,9 @@ export default function Game({
 
           <button
             className="btn tiny"
-            onClick={copyInviteLink}
+            onClick={
+              copyInviteLink
+            }
           >
             {copied
               ? "Kopyalandı ✓"
@@ -1010,7 +1471,9 @@ export default function Game({
 
         <button
           className="btn tiny ghost"
-          onClick={onLeave}
+          onClick={
+            onLeave
+          }
         >
           Odadan çık
         </button>
@@ -1022,12 +1485,14 @@ export default function Game({
             className="dot"
             style={{
               background:
-                me?.color || COLORS[0],
+                me?.color ||
+                COLORS[0],
             }}
           />
 
           <span className="progress-label">
-            {me?.name || "Sen"}
+            {me?.name ||
+              "Sen"}
           </span>
 
           <div className="bar">
@@ -1036,7 +1501,8 @@ export default function Game({
               style={{
                 width: `${minePct}%`,
                 background:
-                  me?.color || COLORS[0],
+                  me?.color ||
+                  COLORS[0],
               }}
             />
           </div>
@@ -1051,7 +1517,8 @@ export default function Game({
             className="dot"
             style={{
               background:
-                partnerEntry?.[1]?.color ||
+                partnerEntry?.[1]
+                  ?.color ||
                 COLORS[1],
             }}
           />
@@ -1066,7 +1533,8 @@ export default function Game({
               style={{
                 width: `${partnerPct}%`,
                 background:
-                  partnerEntry?.[1]?.color ||
+                  partnerEntry?.[1]
+                    ?.color ||
                   COLORS[1],
               }}
             />
@@ -1088,22 +1556,37 @@ export default function Game({
         <canvas
           ref={canvasRef}
           width={canvasWidth}
-          height={canvasHeight}
+          height={
+            canvasHeight
+          }
           style={{
             width: "100%",
-            maxWidth: canvasWidth,
-            touchAction: "none",
+            maxWidth:
+              canvasWidth,
+            touchAction:
+              "none",
           }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerDown={
+            handlePointerDown
+          }
+          onPointerMove={
+            handlePointerMove
+          }
+          onPointerUp={
+            handlePointerUp
+          }
+          onPointerCancel={
+            handlePointerUp
+          }
         />
       </div>
 
       <p className="hint">
-        Parçaları alttaki tepsiden tahtaya sürükle.
-        Doğru yere yakın bırakınca kilitlenir 💞
+        Parçaları alttaki
+        tepsiden tahtaya
+        sürükle. Doğru yere
+        yakın bırakınca
+        kilitlenir 💞
       </p>
     </div>
   );
