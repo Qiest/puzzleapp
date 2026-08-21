@@ -8,6 +8,7 @@ import {
   get,
   set,
   off,
+  onDisconnect,
 } from "firebase/database";
 import { db } from "./firebase.js";
 import {
@@ -85,6 +86,7 @@ export default function Game({
     });
   }, [playerId]);
 
+  // Oyuncuyu odaya bağla
   useEffect(() => {
     if (needsName) return;
 
@@ -92,25 +94,31 @@ export default function Game({
 
     (async () => {
       try {
-        const playersSnap = await get(
-          ref(db, `rooms/${roomCode}/players`)
+        const playersRef = ref(
+          db,
+          `rooms/${roomCode}/players`
         );
 
+        const playersSnap = await get(playersRef);
         const existing = playersSnap.val() || {};
 
-        const otherEntries = Object.entries(existing).filter(
-          ([id]) => id !== playerId
+        // Sadece aktif oyuncuları say.
+        const activeOthers = Object.entries(existing).filter(
+          ([id, p]) =>
+            id !== playerId &&
+            p?.connected === true
         );
 
-        if (!existing[playerId] && otherEntries.length >= 1) {
+        // Zaten iki aktif oyuncu varsa odayı doldur.
+        if (!existing[playerId] && activeOthers.length >= 1) {
           if (!cancelled) {
             setFull(true);
           }
           return;
         }
 
-        const usedColors = otherEntries.map(
-          ([, p]) => p.color
+        const usedColors = activeOthers.map(
+          ([, p]) => p?.color
         );
 
         const myColor =
@@ -122,21 +130,30 @@ export default function Game({
 
         myColorRef.current = myColor;
 
-        await set(
-          ref(db, `rooms/${roomCode}/players/${playerId}`),
-          {
-            name:
-              (playerName ||
-                nameInput ||
-                "Sen").trim() || "Sen",
-            color: myColor,
-            joinedAt:
-              existing[playerId]?.joinedAt ||
-              Date.now(),
-          }
+        const playerRef = ref(
+          db,
+          `rooms/${roomCode}/players/${playerId}`
         );
+
+        // Sayfa kapanırsa Firebase oyuncuyu otomatik silsin.
+        await onDisconnect(playerRef).remove();
+
+        await set(playerRef, {
+          name:
+            (playerName ||
+              nameInput ||
+              "Sen").trim() || "Sen",
+          color: myColor,
+          connected: true,
+          joinedAt:
+            existing[playerId]?.joinedAt ||
+            Date.now(),
+        });
       } catch (error) {
-        console.error("Oyuncu kaydı hatası:", error);
+        console.error(
+          "Oyuncu kaydı hatası:",
+          error
+        );
       }
     })();
 
@@ -151,6 +168,7 @@ export default function Game({
     nameInput,
   ]);
 
+  // Odayı yükle
   useEffect(() => {
     if (needsName) return;
 
@@ -167,11 +185,15 @@ export default function Game({
 
         setRoom(snap.val());
       } catch (error) {
-        console.error("Oda yükleme hatası:", error);
+        console.error(
+          "Oda yükleme hatası:",
+          error
+        );
       }
     })();
   }, [needsName, roomCode]);
 
+  // Oyuncuları dinle
   useEffect(() => {
     if (needsName) return;
 
@@ -189,6 +211,7 @@ export default function Game({
     };
   }, [needsName, roomCode]);
 
+  // Puzzle parçalarını oluştur
   useEffect(() => {
     if (!room) return;
 
@@ -241,7 +264,8 @@ export default function Game({
         .getContext("2d")
         .drawImage(img, 0, 0, boardW, boardH);
 
-      pieceCanvasesRef.current.__ghost = ghost;
+      pieceCanvasesRef.current.__ghost =
+        ghost;
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -256,9 +280,8 @@ export default function Game({
             edgesH
           );
 
-          const pc = document.createElement(
-            "canvas"
-          );
+          const pc =
+            document.createElement("canvas");
 
           pc.width = pieceW + PAD * 2;
           pc.height = pieceH + PAD * 2;
@@ -304,7 +327,9 @@ export default function Game({
 
           ctx.stroke();
 
-          pieceCanvasesRef.current[key] = pc;
+          pieceCanvasesRef.current[key] =
+            pc;
+
           zOrderRef.current[key] = 0;
         }
       }
@@ -315,11 +340,14 @@ export default function Game({
     img.src = image;
   }, [room]);
 
+  // Parça hareketlerini gerçek zamanlı dinle
   useEffect(() => {
     if (!room) return;
 
-    const piecesPath = `rooms/${roomCode}/pieces`;
-    const piecesRef2 = ref(db, piecesPath);
+    const piecesRef2 = ref(
+      db,
+      `rooms/${roomCode}/pieces`
+    );
 
     const handlePiece = (key, p) => {
       if (!p) return;
@@ -331,7 +359,8 @@ export default function Game({
         return;
       }
 
-      const previous = piecesRef.current[key];
+      const previous =
+        piecesRef.current[key];
 
       piecesRef.current[key] = p;
 
@@ -356,11 +385,14 @@ export default function Game({
           `${moverName} bir parça oynattı`
         );
 
-        clearTimeout(window.__toastTimer);
+        clearTimeout(
+          window.__toastTimer
+        );
 
-        window.__toastTimer = setTimeout(() => {
-          setToast("");
-        }, 1300);
+        window.__toastTimer =
+          window.setTimeout(() => {
+            setToast("");
+          }, 1300);
       }
 
       dirtyRef.current = true;
@@ -369,10 +401,15 @@ export default function Game({
     const addedCb = onChildAdded(
       piecesRef2,
       (snap) => {
-        handlePiece(snap.key, snap.val());
+        handlePiece(
+          snap.key,
+          snap.val()
+        );
 
         if (
-          Object.keys(piecesRef.current).length >=
+          Object.keys(
+            piecesRef.current
+          ).length >=
           room.rows * room.cols
         ) {
           initializedRef.current = true;
@@ -384,7 +421,11 @@ export default function Game({
     const changedCb = onChildChanged(
       piecesRef2,
       (snap) => {
-        handlePiece(snap.key, snap.val());
+        handlePiece(
+          snap.key,
+          snap.val()
+        );
+
         updateProgress();
       }
     );
@@ -410,6 +451,7 @@ export default function Game({
     updateProgress,
   ]);
 
+  // Canvas çizimi
   useEffect(() => {
     let raf;
 
@@ -455,13 +497,15 @@ export default function Game({
 
       ctx.fill();
 
+      // Çok silik hedef görüntüsü
       const ghost =
         pieceCanvasesRef.current.__ghost;
 
       if (ghost) {
         ctx.save();
 
-        ctx.globalAlpha = GHOST_OPACITY;
+        ctx.globalAlpha =
+          GHOST_OPACITY;
 
         roundRect(
           ctx,
@@ -474,7 +518,11 @@ export default function Game({
 
         ctx.clip();
 
-        ctx.drawImage(ghost, 0, 0);
+        ctx.drawImage(
+          ghost,
+          0,
+          0
+        );
 
         ctx.restore();
       }
@@ -495,7 +543,8 @@ export default function Game({
 
       ctx.stroke();
 
-      const trayTop = boardH + 60;
+      const trayTop =
+        boardH + 60;
 
       ctx.fillStyle = "#faf3f6";
 
@@ -504,27 +553,38 @@ export default function Game({
         0,
         trayTop,
         boardW,
-        canvas.height - trayTop - 10,
+        canvas.height -
+          trayTop -
+          10,
         18
       );
 
       ctx.fill();
 
-      const pieceW = boardW / cols;
-      const pieceH = boardH / rows;
+      const pieceW =
+        boardW / cols;
 
-      const keys = Object.keys(
-        pieceCanvasesRef.current
-      ).filter((k) => k !== "__ghost");
+      const pieceH =
+        boardH / rows;
+
+      const keys =
+        Object.keys(
+          pieceCanvasesRef.current
+        ).filter(
+          (k) => k !== "__ghost"
+        );
 
       keys.sort(
         (a, b) =>
-          (zOrderRef.current[a] || 0) -
-          (zOrderRef.current[b] || 0)
+          (zOrderRef.current[a] ||
+            0) -
+          (zOrderRef.current[b] ||
+            0)
       );
 
       for (const key of keys) {
-        const p = piecesRef.current[key];
+        const p =
+          piecesRef.current[key];
 
         if (!p) continue;
 
@@ -554,9 +614,13 @@ export default function Game({
 
         ctx.restore();
 
-        if (p.placed && p.placedBy) {
+        if (
+          p.placed &&
+          p.placedBy
+        ) {
           const color =
-            players[p.placedBy]?.color ||
+            players[p.placedBy]
+              ?.color ||
             "#ff6f9c";
 
           ctx.save();
@@ -576,21 +640,27 @@ export default function Game({
         }
 
         if (
-          highlightRef.current.key === key &&
+          highlightRef.current
+            .key === key &&
           Date.now() <
-            highlightRef.current.until
+            highlightRef.current
+              .until
         ) {
           ctx.save();
 
-          ctx.strokeStyle = "#ffd166";
+          ctx.strokeStyle =
+            "#ffd166";
+
           ctx.lineWidth = 3;
           ctx.globalAlpha = 0.85;
 
           ctx.strokeRect(
             p.x - PAD * 0.6,
             p.y - PAD * 0.6,
-            pieceW + PAD * 1.2,
-            pieceH + PAD * 1.2
+            pieceW +
+              PAD * 1.2,
+            pieceH +
+              PAD * 1.2
           );
 
           ctx.restore();
@@ -608,7 +678,8 @@ export default function Game({
   }, [room, players]);
 
   function handlePointerDown(e) {
-    const canvas = canvasRef.current;
+    const canvas =
+      canvasRef.current;
 
     if (!canvas || !room) return;
 
@@ -616,52 +687,73 @@ export default function Game({
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width / rect.width;
+      canvas.width /
+      rect.width;
 
     const scaleY =
-      canvas.height / rect.height;
+      canvas.height /
+      rect.height;
 
     const px =
-      (e.clientX - rect.left) *
+      (e.clientX -
+        rect.left) *
       scaleX;
 
     const py =
-      (e.clientY - rect.top) *
+      (e.clientY -
+        rect.top) *
       scaleY;
 
     const {
       cols,
-      rows,
       boardW,
       boardH,
     } = room;
 
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const pieceW =
+      boardW / cols;
 
-    const keys = Object.keys(
-      piecesRef.current
-    ).sort(
-      (a, b) =>
-        (zOrderRef.current[b] || 0) -
-        (zOrderRef.current[a] || 0)
-    );
+    const pieceH =
+      boardH /
+      room.rows;
+
+    const keys =
+      Object.keys(
+        piecesRef.current
+      ).sort(
+        (a, b) =>
+          (zOrderRef.current[b] ||
+            0) -
+          (zOrderRef.current[a] ||
+            0)
+      );
 
     for (const key of keys) {
-      const p = piecesRef.current[key];
+      const p =
+        piecesRef.current[key];
 
-      if (!p || p.placed) continue;
+      if (!p || p.placed) {
+        continue;
+      }
 
       if (
         px >= p.x - PAD &&
-        px <= p.x + pieceW + PAD &&
+        px <=
+          p.x +
+            pieceW +
+            PAD &&
         py >= p.y - PAD &&
-        py <= p.y + pieceH + PAD
+        py <=
+          p.y +
+            pieceH +
+            PAD
       ) {
         draggingRef.current = {
           key,
-          offsetX: px - p.x,
-          offsetY: py - p.y,
+          offsetX:
+            px - p.x,
+          offsetY:
+            py - p.y,
         };
 
         zCounterRef.current += 1;
@@ -679,27 +771,33 @@ export default function Game({
   }
 
   function handlePointerMove(e) {
-    const d = draggingRef.current;
+    const d =
+      draggingRef.current;
 
     if (!d || !room) return;
 
-    const canvas = canvasRef.current;
+    const canvas =
+      canvasRef.current;
 
     const rect =
       canvas.getBoundingClientRect();
 
     const scaleX =
-      canvas.width / rect.width;
+      canvas.width /
+      rect.width;
 
     const scaleY =
-      canvas.height / rect.height;
+      canvas.height /
+      rect.height;
 
     const px =
-      (e.clientX - rect.left) *
+      (e.clientX -
+        rect.left) *
       scaleX;
 
     const py =
-      (e.clientY - rect.top) *
+      (e.clientY -
+        rect.top) *
       scaleY;
 
     const p =
@@ -707,8 +805,11 @@ export default function Game({
 
     if (!p) return;
 
-    p.x = px - d.offsetX;
-    p.y = py - d.offsetY;
+    p.x =
+      px - d.offsetX;
+
+    p.y =
+      py - d.offsetY;
 
     dirtyRef.current = true;
 
@@ -719,7 +820,8 @@ export default function Game({
         lastFirebaseWriteRef.current >=
       FIREBASE_MOVE_INTERVAL
     ) {
-      lastFirebaseWriteRef.current = now;
+      lastFirebaseWriteRef.current =
+        now;
 
       update(
         ref(
@@ -732,17 +834,18 @@ export default function Game({
           movedBy: playerId,
           movedAt: now,
         }
-      ).catch((error) =>
+      ).catch((error) => {
         console.error(
           "Parça senkronizasyon hatası:",
           error
-        )
-      );
+        );
+      });
     }
   }
 
   function handlePointerUp() {
-    const d = draggingRef.current;
+    const d =
+      draggingRef.current;
 
     if (!d || !room) return;
 
@@ -755,15 +858,22 @@ export default function Game({
       rows,
     } = room;
 
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const pieceW =
+      boardW / cols;
 
-    const [r, c] = d.key
-      .split("_")
-      .map(Number);
+    const pieceH =
+      boardH / rows;
 
-    const correctX = c * pieceW;
-    const correctY = r * pieceH;
+    const [r, c] =
+      d.key
+        .split("_")
+        .map(Number);
+
+    const correctX =
+      c * pieceW;
+
+    const correctY =
+      r * pieceH;
 
     const p =
       piecesRef.current[d.key];
@@ -771,15 +881,20 @@ export default function Game({
     if (!p) return;
 
     const threshold =
-      Math.min(pieceW, pieceH) * 0.4;
+      Math.min(
+        pieceW,
+        pieceH
+      ) * 0.4;
 
-    const dx = Math.abs(
-      p.x - correctX
-    );
+    const dx =
+      Math.abs(
+        p.x - correctX
+      );
 
-    const dy = Math.abs(
-      p.y - correctY
-    );
+    const dy =
+      Math.abs(
+        p.y - correctY
+      );
 
     let placed = false;
 
@@ -795,6 +910,7 @@ export default function Game({
     const now = Date.now();
 
     p.placed = placed;
+
     p.placedBy = placed
       ? playerId
       : null;
@@ -819,12 +935,12 @@ export default function Game({
         movedBy: playerId,
         movedAt: now,
       }
-    ).catch((error) =>
+    ).catch((error) => {
       console.error(
         "Parça bırakma hatası:",
         error
-      )
-    );
+      );
+    });
   }
 
   function roundRect(
@@ -837,7 +953,10 @@ export default function Game({
   ) {
     ctx.beginPath();
 
-    ctx.moveTo(x + r, y);
+    ctx.moveTo(
+      x + r,
+      y
+    );
 
     ctx.arcTo(
       x + w,
@@ -895,7 +1014,9 @@ export default function Game({
     return (
       <div className="home">
         <div className="home-card">
-          <h1>Odaya katıl 💌</h1>
+          <h1>
+            Odaya katıl 💌
+          </h1>
 
           <p className="subtitle">
             Oda kodu: {roomCode}
@@ -968,13 +1089,15 @@ export default function Game({
     );
   }
 
-  const canvasWidth = room.boardW;
+  const canvasWidth =
+    room.boardW;
 
   const trayTop =
     room.boardH + 60;
 
   const pieceH =
-    room.boardH / room.rows;
+    room.boardH /
+    room.rows;
 
   const canvasHeight =
     trayTop +
@@ -985,30 +1108,38 @@ export default function Game({
 
   const total =
     progress.total ||
-    room.rows * room.cols;
+    room.rows *
+      room.cols;
 
   const minePct = total
     ? Math.round(
-        (progress.mine / total) * 100
+        (progress.mine /
+          total) *
+          100
       )
     : 0;
 
   const partnerPct = total
     ? Math.round(
-        (progress.partner / total) * 100
+        (progress.partner /
+          total) *
+          100
       )
     : 0;
 
-  const me = players[playerId];
+  const me =
+    players[playerId];
 
   const partnerEntry =
     Object.entries(players).find(
-      ([id]) => id !== playerId
+      ([id]) =>
+        id !== playerId
     );
 
-  const partnerName = partnerEntry
-    ? partnerEntry[1].name
-    : "Sevgilin (henüz katılmadı)";
+  const partnerName =
+    partnerEntry
+      ? partnerEntry[1].name
+      : "Sevgilin (henüz katılmadı)";
 
   return (
     <div className="game">
@@ -1020,7 +1151,9 @@ export default function Game({
 
           <button
             className="btn tiny"
-            onClick={copyInviteLink}
+            onClick={
+              copyInviteLink
+            }
           >
             {copied
               ? "Kopyalandı ✓"
@@ -1073,7 +1206,8 @@ export default function Game({
             className="dot"
             style={{
               background:
-                partnerEntry?.[1]?.color ||
+                partnerEntry?.[1]
+                  ?.color ||
                 COLORS[1],
             }}
           />
@@ -1088,7 +1222,8 @@ export default function Game({
               style={{
                 width: `${partnerPct}%`,
                 background:
-                  partnerEntry?.[1]?.color ||
+                  partnerEntry?.[1]
+                    ?.color ||
                   COLORS[1],
               }}
             />
@@ -1113,7 +1248,8 @@ export default function Game({
           height={canvasHeight}
           style={{
             width: "100%",
-            maxWidth: canvasWidth,
+            maxWidth:
+              canvasWidth,
             touchAction: "none",
           }}
           onPointerDown={
