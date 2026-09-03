@@ -1,42 +1,99 @@
 import React, { useEffect, useState } from "react";
 import Home from "./Home.jsx";
 import Game from "./Game.jsx";
-
-function getOrCreatePlayerId() {
-  let id = localStorage.getItem("puzzle_player_id");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("puzzle_player_id", id);
-  }
-  return id;
-}
+import Auth from "./Auth.jsx";
+import { auth } from "./firebase.js";
+import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 
 export default function App() {
-  const [room, setRoom] = useState(null); // { code, name }
-  const playerId = getOrCreatePlayerId();
+  const [user, setUser] = useState(undefined);
+  const [room, setRoom] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomFromUrl = params.get("room");
-    if (roomFromUrl) {
-      setRoom({ code: roomFromUrl.toUpperCase(), name: "" , pendingJoin: true});
+
+    if (!roomFromUrl) return;
+
+    const code = roomFromUrl.toUpperCase();
+    setRoom({
+      code,
+      pendingJoin: true,
+    });
+
+    // Davet linkiyle gelen kullanıcı hesap açmadan bir kez misafir olarak
+    // katılabilsin. Firebase Anonymous Auth geçici bir UID sağlar.
+    if (user === null) {
+      signInAnonymously(auth).catch((err) => {
+        console.error("Misafir oturumu başlatılamadı:", err);
+      });
     }
-  }, []);
+  }, [user]);
+
+
+  if (user === undefined) {
+    return <div className="auth-loading">Yükleniyor...</div>;
+  }
+
+  // Davet linkinden gelen anonim kullanıcı doğrudan odaya girebilir.
+  // Normal kullanıcılar için mevcut e-posta doğrulama şartı korunur.
+  if (!user && room?.pendingJoin) {
+    return <div className="auth-loading">Davete katılınıyor...</div>;
+  }
+
+  if (!user) {
+    return <Auth initialMode="login" onSuccess={() => {}} />;
+  }
+
+  if (!user.isAnonymous && !user.emailVerified) {
+    return <Auth initialMode="login" onSuccess={() => {}} />;
+  }
+
+  const playerId = user.uid;
+  const playerName = user.isAnonymous ? "Misafir" : (user.displayName || "Oyuncu");
 
   if (room && room.code) {
     return (
       <Game
         roomCode={room.code}
         playerId={playerId}
-        playerName={room.name}
+        playerName={room.playerNameOverride || playerName}
+        isGuest={user.isAnonymous}
         pendingJoin={!!room.pendingJoin}
-        onLeave={() => {
+        onLeave={async () => {
           window.history.replaceState({}, "", window.location.pathname);
           setRoom(null);
+          // Misafir oturumu yalnızca davet edilen oda süresince yaşar.
+          if (user.isAnonymous) {
+            try { await signOut(auth); } catch (error) {
+              console.error("Misafir oturumu kapatılamadı:", error);
+            }
+          }
         }}
       />
     );
   }
 
-  return <Home playerId={playerId} onEnterRoom={(code, name) => setRoom({ code, name })} />;
+  return (
+    <Home
+      playerId={playerId}
+      user={user}
+      playerName={playerName}
+      onEnterRoom={(code, name, pendingJoin = false) => {
+        setRoom({
+          code,
+          pendingJoin,
+          playerNameOverride: name || null,
+        });
+      }}
+    />
+  );
 }

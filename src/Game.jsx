@@ -1,3 +1,5 @@
+import { ref, get, set, update, onValue, onDisconnect, onChildAdded, onChildChanged, off } from "firebase/database";
+import { db } from "./firebase.js";
 import React, {
   useEffect,
   useRef,
@@ -6,38 +8,29 @@ import React, {
 } from "react";
 
 import {
-  ref,
-  onValue,
-  onChildAdded,
-  onChildChanged,
-  update,
-  get,
-  set,
-  off,
-  onDisconnect,
-} from "firebase/database";
-
-import { db } from "./firebase.js";
-
-import {
   generateEdges,
   pieceEdges,
   tracePiecePath,
+  computeGrid,
 } from "./puzzleUtils.js";
 
 // NOT: puzzleUtils.js içindeki tabHeight en fazla 18px'e kadar çıkabiliyor
 // (Math.min(length * 0.20, 18)). PAD bundan küçük olursa çıkıntılar canvas
 // kenarında kırpılıyor ve oyuk/çıkıntı birbirini tam karşılamıyor.
 // Bu yüzden PAD, o maksimum değerden büyük olmalı.
-const PAD = 22;
+const PAD = 30;
+
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
 const FIREBASE_MOVE_INTERVAL = 100;
+function totalPiecesForLayout(rows, cols) { return rows * cols; }
+
 
 export default function Game({
   roomCode,
   playerId,
   playerName,
+  isGuest = false,
   pendingJoin,
   onLeave,
 }) {
@@ -74,6 +67,23 @@ export default function Game({
   const [finished, setFinished] =
     useState(false);
 
+  const [selectedPieceKey, setSelectedPieceKey] = useState(null);
+  const [hintsLeft, setHintsLeft] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [showCheatConfirm, setShowCheatConfirm] = useState(false);
+  const [reward, setReward] = useState(null);
+  const [reaction, setReaction] = useState("");
+  const [partnerReaction, setPartnerReaction] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [gameAvatarViewer, setGameAvatarViewer] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatText, setChatText] = useState("");
+  const [chatUnread, setChatUnread] = useState(false);
+
+  const startedAtRef = useRef(null);
+
   const canvasRef =
     useRef(null);
 
@@ -109,6 +119,84 @@ export default function Game({
 
   const myColorRef =
     useRef(COLORS[0]);
+  const rewardSavedRef = useRef(false);
+  const cheatedRef = useRef(false);
+  const completionDismissedRef = useRef(false);
+
+  const saveCompletionReward = useCallback(async () => {
+    if (
+      isGuest ||
+      rewardSavedRef.current ||
+      cheatedRef.current ||
+      room?.cheatedBy ||
+      !room
+    ) return;
+
+    rewardSavedRef.current = true;
+    const total = room.totalPieces || room.rows * room.cols;
+    const gainedXp =
+      (total >= 200 ? 250 : total >= 100 ? 100 : 50) +
+      (room.rotatePieces ? 50 : 0);
+
+    try {
+      const userRef = ref(db, `users/${playerId}`);
+      const snap = await get(userRef);
+      const data = snap.val() || {};
+      const completed = Number(data.completedPuzzles || 0) + 1;
+      const history = Array.isArray(data.history) ? data.history : [];
+      history.unshift({
+        roomCode,
+        pieces: total,
+        time: elapsed,
+        difficulty: room.difficultyName || "Klasik",
+        completedAt: Date.now(),
+      });
+
+      const badges = Array.isArray(data.badges) ? data.badges : [];
+      const next = [...badges];
+      const add = (id) => {
+        if (!next.includes(id)) next.push(id);
+      };
+
+      if (completed === 1) add("first");
+      if (total >= 100) add("hundred");
+      if (total >= 200) add("twohundred");
+      if (room.rotatePieces) add("rotator");
+      if ((hintsLeft ?? 0) === (room.hintsAllowed ?? 0)) add("perfect");
+
+      const activePlayers = Object.values(players || {}).filter(
+        (p) => p?.connected === true
+      );
+      if (activePlayers.length >= 2) add("team");
+
+      const totalXp = Number(data.xp || 0) + gainedXp;
+      await update(userRef, {
+        name: data.name || playerName || "Oyuncu",
+        xp: totalXp,
+        completedPuzzles: completed,
+        togetherPuzzles:
+          Number(data.togetherPuzzles || 0) +
+          (activePlayers.length >= 2 ? 1 : 0),
+        totalTime: Number(data.totalTime || 0) + elapsed,
+        bestTime: Math.min(
+          Number(data.bestTime || Infinity),
+          elapsed
+        ),
+        badges: next,
+        history: history.slice(0, 20),
+      });
+
+      setReward({
+        gainedXp,
+        level: Math.floor(totalXp / 500) + 1,
+        newBadges: next.filter((id) => !badges.includes(id)),
+      });
+    } catch (error) {
+      console.error("Ödül kaydı hatası:", error);
+      rewardSavedRef.current = false;
+      setReward(null);
+    }
+  }, [room, playerId, playerName, roomCode, elapsed, hintsLeft, players, isGuest]);
 
   const updateProgress =
     useCallback(() => {
@@ -135,23 +223,32 @@ export default function Game({
           (p) =>
             p.placed &&
             p.placedBy &&
-            p.placedBy !==
-              playerId
+            p.placedBy !== playerId
         ).length;
 
-      setProgress({
+      setProgress((current) => ({
+        ...current,
         mine,
         partner,
         total,
-      });
+      }));
 
-      if (
-        total > 0 &&
-        mine === total
-      ) {
-        setFinished(true);
+      const placedTotal = all.filter((p) => p.placed).length;
+      const solvedByCheat =
+        Boolean(room?.cheatedBy) ||
+        all.some((p) => p?.movedBy === "cheat");
+
+      if (total > 0 && placedTotal === total) {
+        if (!completionDismissedRef.current) {
+          setFinished(true);
+        }
+        if (!solvedByCheat) {
+          saveCompletionReward();
+        } else {
+          setReward(null);
+        }
       }
-    }, [playerId]);
+    }, [playerId, saveCompletionReward]);
 
   useEffect(() => {
     if (needsName) return;
@@ -323,11 +420,7 @@ export default function Game({
       );
 
     return () => {
-      off(
-        playersRef,
-        "value",
-        cb
-      );
+      cb?.();
     };
   }, [
     needsName,
@@ -335,7 +428,93 @@ export default function Game({
   ]);
 
   useEffect(() => {
+    if (needsName || !Object.keys(players || {}).length) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(Object.entries(players).map(async ([id, player]) => {
+        if (player?.avatar) return [id, player];
+        try {
+          const snap = await get(ref(db, `publicProfiles/${id}`));
+          const data = snap.val() || {};
+          return [id, { ...player, avatar: typeof data.avatar === "string" ? data.avatar : "" }];
+        } catch {
+          return [id, player];
+        }
+      }));
+      if (cancelled) return;
+      const hydrated = Object.fromEntries(entries);
+      setPlayers(current => {
+        let changed = false;
+        const next = { ...current };
+        Object.entries(hydrated).forEach(([id, player]) => {
+          if (player?.avatar && player.avatar !== current[id]?.avatar) {
+            next[id] = { ...current[id], avatar: player.avatar };
+            changed = true;
+          }
+        });
+        return changed ? next : current;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [needsName, players]);
+
+  useEffect(() => {
+    if (needsName) return;
+
+    const cheatedRefDb = ref(db, `rooms/${roomCode}/cheatedBy`);
+    const unsubscribe = onValue(cheatedRefDb, (snap) => {
+      const cheatedBy = snap.val() || null;
+      if (!cheatedBy) return;
+      cheatedRef.current = true;
+      setRoom((current) =>
+        current ? { ...current, cheatedBy } : current
+      );
+      setReward(null);
+    });
+
+    return () => unsubscribe?.();
+  }, [needsName, roomCode]);
+
+  useEffect(() => {
+    if (!room || !roomCode) return;
+
+    const chatRef = ref(db, `rooms/${roomCode}/chat`);
+    const unsubscribe = onValue(chatRef, (snap) => {
+      const data = snap.val() || {};
+      const messages = Object.entries(data)
+        .map(([id, value]) => ({ id, ...(value || {}) }))
+        .sort((a, b) => Number(a.at || 0) - Number(b.at || 0))
+        .slice(-100);
+      setChatMessages(messages);
+
+      const readAt = Number(localStorage.getItem(`roomChatRead:${roomCode}:${playerId}`) || 0);
+      const lastIncoming = [...messages].reverse().find((m) => m.senderId !== playerId);
+      setChatUnread(!chatOpen && !!lastIncoming && Number(lastIncoming.at || 0) > readAt);
+    });
+
+    return () => unsubscribe?.();
+  }, [room, roomCode, playerId, chatOpen]);
+
+  async function sendRoomMessage() {
+    const text = chatText.trim();
+    if (!text || !roomCode) return;
+
+    const id = `${playerId}_${Date.now()}`;
+    await set(ref(db, `rooms/${roomCode}/chat/${id}`), {
+      senderId: playerId,
+      name: me?.name || playerName || "Oyuncu",
+      text: text.slice(0, 300),
+      at: Date.now(),
+    });
+    setChatText("");
+  }
+
+  useEffect(() => {
     if (!room) return;
+    let cancelled = false;
+    setHintsLeft(Number.isFinite(Number(room.hintsAllowed)) ? Number(room.hintsAllowed) : 3);
+    setShowPreview(false);
+    if (!startedAtRef.current) startedAtRef.current = Date.now();
 
     const {
       rows,
@@ -352,15 +531,9 @@ export default function Game({
     const pieceH =
       boardH / rows;
 
-    const {
-      edgesV,
-      edgesH,
-    } =
-      generateEdges(
-        rows,
-        cols,
-        seed
-      );
+    const generatedEdges = generateEdges(rows, cols, seed);
+    const edgesV = room.edges?.edgesV || generatedEdges.edgesV;
+    const edgesH = room.edges?.edgesH || generatedEdges.edgesH;
 
     const img =
       new Image();
@@ -464,20 +637,19 @@ export default function Game({
           ctx.save();
           ctx.clip();
 
+          // Her parçanın çıkıntıları da fotoğrafla dolsun diye hücrenin
+          // çevresindeki görüntüyü PAD kadar geniş kesiyoruz.
+          // Böylece parçalar arasında beyaz/şeffaf boşluk görünmez.
           ctx.drawImage(
-            padded,
-            c * pieceW,
-            r * pieceH,
-            pieceW +
-              PAD * 2,
-            pieceH +
-              PAD * 2,
-            0,
-            0,
-            pieceW +
-              PAD * 2,
-            pieceH +
-              PAD * 2
+            img,
+            Math.max(0, c * pieceW - PAD),
+            Math.max(0, r * pieceH - PAD),
+            Math.min(img.width - Math.max(0, c * pieceW - PAD), pieceW + PAD * 2),
+            Math.min(img.height - Math.max(0, r * pieceH - PAD), pieceH + PAD * 2),
+            c === 0 ? PAD : 0,
+            r === 0 ? PAD : 0,
+            Math.min(pieceW + PAD * 2, img.width - Math.max(0, c * pieceW - PAD)),
+            Math.min(pieceH + PAD * 2, img.height - Math.max(0, r * pieceH - PAD))
           );
 
           ctx.restore();
@@ -490,7 +662,7 @@ export default function Game({
             edges
           );
 
-          ctx.lineWidth = 1.1;
+          ctx.lineWidth = 2.2;
           ctx.strokeStyle =
             "rgba(60,40,50,0.32)";
 
@@ -515,111 +687,114 @@ export default function Game({
   useEffect(() => {
     if (!room) return;
 
-    const piecesRef2 =
-      ref(
-        db,
-        `rooms/${roomCode}/pieces`
-      );
+    const reactionsRef = ref(db, `rooms/${roomCode}/reactions`);
+    const unsubscribe = onValue(reactionsRef, (snap) => {
+      const all = snap.val() || {};
+      const others = Object.entries(all)
+        .filter(([id, value]) => id !== playerId && value?.text)
+        .sort((a, b) => Number(b[1]?.at || 0) - Number(a[1]?.at || 0));
 
-    const handlePiece =
-      (key, p) => {
-        if (!p) return;
+      const latest = others[0]?.[1];
+      if (!latest) return;
 
-        if (
-          draggingRef.current &&
-          draggingRef.current.key === key
-        ) {
-          return;
-        }
+      const age = Date.now() - Number(latest.at || 0);
+      if (age > 2500) return;
 
-        const previous =
-          piecesRef.current[key];
+      setPartnerReaction({
+        name: latest.name || "Diğer oyuncu",
+        text: latest.text,
+        at: latest.at,
+      });
 
-        piecesRef.current[key] = p;
-
-        if (
-          initializedRef.current &&
-          p.movedBy &&
-          p.movedBy !== playerId &&
-          p.movedAt &&
-          (!previous?.movedAt ||
-            p.movedAt >
-              previous.movedAt)
-        ) {
-          highlightRef.current = {
-            key,
-            until: Date.now() + 900,
-          };
-
-          const moverName =
-            players[p.movedBy]?.name ||
-            "Diğer oyuncu";
-
-          setToast(
-            `${moverName} bir parça oynattı`
-          );
-
-          clearTimeout(
-            window.__toastTimer
-          );
-
-          window.__toastTimer =
-            setTimeout(() => {
-              setToast("");
-            }, 1300);
-        }
-
-        dirtyRef.current = true;
-      };
-
-    const addedCb =
-      onChildAdded(
-        piecesRef2,
-        (snap) => {
-          handlePiece(
-            snap.key,
-            snap.val()
-          );
-
-          if (
-            Object.keys(
-              piecesRef.current
-            ).length >=
-            room.rows * room.cols
-          ) {
-            initializedRef.current =
-              true;
-
-            updateProgress();
-          }
-        }
-      );
-
-    const changedCb =
-      onChildChanged(
-        piecesRef2,
-        (snap) => {
-          handlePiece(
-            snap.key,
-            snap.val()
-          );
-
-          updateProgress();
-        }
-      );
+      window.clearTimeout(window.__partnerReactionTimer);
+      window.__partnerReactionTimer = window.setTimeout(() => {
+        setPartnerReaction(null);
+      }, Math.max(300, 2500 - age));
+    });
 
     return () => {
-      off(
-        piecesRef2,
-        "child_added",
-        addedCb
-      );
+      unsubscribe?.();
+      window.clearTimeout(window.__partnerReactionTimer);
+    };
+  }, [room, roomCode, playerId]);
 
-      off(
-        piecesRef2,
-        "child_changed",
-        changedCb
-      );
+  // İki oyuncu aynı puzzle tahtasını paylaşır. Parça konumu ve
+  // yerleştirme durumu odanın ortak /pieces alanından gelir.
+  useEffect(() => {
+    if (!room) return;
+
+    const sharedPiecesRef = ref(
+      db,
+      `rooms/${roomCode}/pieces`
+    );
+
+    const handleSharedPiece = (key, p) => {
+      if (!p) return;
+
+      if (
+        draggingRef.current &&
+        draggingRef.current.key === key
+      ) {
+        return;
+      }
+
+      const previous = piecesRef.current[key];
+      piecesRef.current[key] = p;
+
+      if (
+        initializedRef.current &&
+        p.movedBy &&
+        p.movedBy !== playerId &&
+        p.movedAt &&
+        (!previous?.movedAt ||
+          p.movedAt > previous.movedAt)
+      ) {
+        highlightRef.current = {
+          key,
+          until: Date.now() + 700,
+        };
+
+        const moverName =
+          players[p.movedBy]?.name ||
+          "Diğer oyuncu";
+
+        setToast(`${moverName} bir parça oynattı`);
+
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = window.setTimeout(() => {
+          setToast("");
+        }, 900);
+      }
+
+      dirtyRef.current = true;
+      updateProgress();
+    };
+
+    const addedCb = onChildAdded(
+      sharedPiecesRef,
+      (snap) => {
+        handleSharedPiece(snap.key, snap.val());
+
+        if (
+          Object.keys(piecesRef.current).length >=
+          room.rows * room.cols
+        ) {
+          initializedRef.current = true;
+          updateProgress();
+        }
+      }
+    );
+
+    const changedCb = onChildChanged(
+      sharedPiecesRef,
+      (snap) => {
+        handleSharedPiece(snap.key, snap.val());
+      }
+    );
+
+    return () => {
+      off(sharedPiecesRef, "child_added", addedCb);
+      off(sharedPiecesRef, "child_changed", changedCb);
     };
   }, [
     room,
@@ -628,6 +803,89 @@ export default function Game({
     players,
     updateProgress,
   ]);
+
+  useEffect(() => {
+    if (!room || finished) return;
+    const timer = setInterval(() => {
+      if (startedAtRef.current) setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [room, finished]);
+
+  function formatTime(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+    const s = Math.floor(totalSeconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  function rotatePiece(key) {
+    if (!room?.rotatePieces || !key) return;
+    const p = piecesRef.current[key];
+    if (!p || p.placed) return;
+
+    p.rotation = ((Number(p.rotation) || 0) + 90) % 360;
+    setSelectedPieceKey(key);
+    dirtyRef.current = true;
+
+    update(
+      ref(db, `rooms/${roomCode}/pieces/${key}`),
+      { rotation: p.rotation, movedBy: playerId, movedAt: Date.now() }
+    ).catch(() => {});
+  }
+
+  function findPieceAtPoint(px, py) {
+    if (!room) return null;
+
+    const pieceW = room.boardW / room.cols;
+    const pieceH = room.boardH / room.rows;
+    const keys = Object.keys(piecesRef.current).sort(
+      (a, b) => (zOrderRef.current[b] || 0) - (zOrderRef.current[a] || 0)
+    );
+
+    for (const key of keys) {
+      const p = piecesRef.current[key];
+      if (!p || p.placed) continue;
+
+      const angle = -((Number(p.rotation) || 0) * Math.PI) / 180;
+      const cx = p.x + pieceW / 2;
+      const cy = p.y + pieceH / 2;
+      const dx = px - cx;
+      const dy = py - cy;
+      const localX = dx * Math.cos(angle) - dy * Math.sin(angle) + pieceW / 2;
+      const localY = dx * Math.sin(angle) + dy * Math.cos(angle) + pieceH / 2;
+
+      if (
+        localX >= -PAD &&
+        localX <= pieceW + PAD &&
+        localY >= -PAD &&
+        localY <= pieceH + PAD
+      ) {
+        return key;
+      }
+    }
+
+    return null;
+  }
+
+  function rotateSelectedPiece() {
+    rotatePiece(selectedPieceKey);
+  }
+
+  function handleDoubleClick(e) {
+    if (!room?.rotatePieces) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const px = (e.clientX - rect.left) * scaleX;
+    const py = (e.clientY - rect.top) * scaleY;
+    const key = findPieceAtPoint(px, py);
+
+    if (key) rotatePiece(key);
+  }
 
   useEffect(() => {
     let raf;
@@ -687,7 +945,7 @@ export default function Game({
         pieceCanvasesRef.current
           .__ghost;
 
-      if (ghost) {
+      if (ghost && (room.previewAllowed !== false) && showPreview) {
         ctx.save();
 
         ctx.globalAlpha =
@@ -794,36 +1052,16 @@ export default function Game({
           ctx.shadowOffsetY = 1;
         }
 
-        ctx.drawImage(
-          bmp,
-          p.x - PAD,
-          p.y - PAD
-        );
+        const rotation = Number(p.rotation) || 0;
+        if (rotation) {
+          ctx.translate(p.x + pieceW / 2, p.y + pieceH / 2);
+          ctx.rotate(rotation * Math.PI / 180);
+          ctx.drawImage(bmp, -pieceW / 2 - PAD, -pieceH / 2 - PAD);
+        } else {
+          ctx.drawImage(bmp, p.x - PAD, p.y - PAD);
+        }
 
         ctx.restore();
-
-        if (
-          p.placed &&
-          p.placedBy
-        ) {
-          const color =
-            players[p.placedBy]?.color ||
-            "#ff6f9c";
-
-          ctx.save();
-          ctx.globalAlpha = 0.4;
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-
-          ctx.strokeRect(
-            p.x,
-            p.y,
-            pieceW,
-            pieceH
-          );
-
-          ctx.restore();
-        }
 
         if (
           highlightRef.current.key === key &&
@@ -855,9 +1093,26 @@ export default function Game({
     return () => {
       cancelAnimationFrame(raf);
     };
-  }, [room, players]);
+  }, [room, players, showPreview]);
 
   function handlePointerDown(e) {
+    if (e.button === 2) {
+      e.preventDefault();
+      if (!room?.rotatePieces) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (e.clientX - rect.left) * scaleX;
+      const py = (e.clientY - rect.top) * scaleY;
+      const key = findPieceAtPoint(px, py);
+
+      if (key) rotatePiece(key);
+      return;
+    }
     const canvas =
       canvasRef.current;
 
@@ -909,17 +1164,27 @@ export default function Game({
 
       if (!p || p.placed) continue;
 
+      const rotation = ((Number(p.rotation) || 0) * Math.PI) / 180;
+      const dx = px - (p.x + pieceW / 2);
+      const dy = py - (p.y + pieceH / 2);
+      const cos = Math.cos(-rotation);
+      const sin = Math.sin(-rotation);
+      const localX = dx * cos - dy * sin + pieceW / 2;
+      const localY = dx * sin + dy * cos + pieceH / 2;
+
       if (
-        px >= p.x - PAD &&
-        px <= p.x + pieceW + PAD &&
-        py >= p.y - PAD &&
-        py <= p.y + pieceH + PAD
+        localX >= -PAD &&
+        localX <= pieceW + PAD &&
+        localY >= -PAD &&
+        localY <= pieceH + PAD
       ) {
         draggingRef.current = {
           key,
           offsetX: px - p.x,
           offsetY: py - p.y,
         };
+
+        setSelectedPieceKey(key);
 
         zCounterRef.current += 1;
 
@@ -1022,6 +1287,19 @@ export default function Game({
           error
         );
       });
+
+      update(
+        ref(
+          db,
+          `rooms/${roomCode}/liveMoves/${playerId}`
+        ),
+        {
+          key: d.key,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          movedAt: now,
+        }
+      ).catch(() => {});
     }
   }
 
@@ -1080,6 +1358,7 @@ export default function Game({
     let placed = false;
 
     if (
+      (Number(p.rotation) || 0) === 0 &&
       dx < threshold &&
       dy < threshold
     ) {
@@ -1124,10 +1403,61 @@ export default function Game({
         error
       );
     });
+
+    update(
+      ref(
+        db,
+        `rooms/${roomCode}/liveMoves/${playerId}`
+      ),
+      {
+        key: d.key,
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        placed,
+        movedAt: now,
+      }
+    ).catch(() => {});
+  }
+
+  function findMissingPiece() {
+    if (!room) return;
+
+    const available = Object.entries(piecesRef.current).filter(
+      ([, p]) => p && !p.placed
+    );
+
+    if (!available.length) {
+      setToast("Bütün parçalar zaten tamamlandı.");
+      return;
+    }
+
+    if (hintsLeft !== null && hintsLeft <= 0) {
+      setToast("Yardım hakkın kalmadı.");
+      return;
+    }
+    if (hintsLeft !== null) setHintsLeft(h => Math.max(0, h - 1));
+    const [key] = available[Math.floor(Math.random() * available.length)];
+
+    highlightRef.current = {
+      key,
+      until: Date.now() + 2500,
+    };
+
+    dirtyRef.current = true;
+
+    setToast("İşaretli parçaya bak.");
+
+    clearTimeout(window.__missingPieceTimer);
+    window.__missingPieceTimer = setTimeout(() => {
+      highlightRef.current = { key: null, until: 0 };
+      dirtyRef.current = true;
+      setToast("");
+    }, 2500);
   }
 
   function completePuzzleCheat() {
     if (!room) return;
+    cheatedRef.current = true;
 
     const now =
       Date.now();
@@ -1161,9 +1491,10 @@ export default function Game({
 
         p.x = x;
         p.y = y;
+        p.rotation = 0;
         p.placed = true;
-        p.placedBy = playerId;
-        p.movedBy = playerId;
+        p.placedBy = null;
+        p.movedBy = "cheat";
         p.movedAt = now;
 
         updates[
@@ -1175,16 +1506,20 @@ export default function Game({
         ] = Math.round(y);
 
         updates[
+          `rooms/${roomCode}/pieces/${key}/rotation`
+        ] = 0;
+
+        updates[
           `rooms/${roomCode}/pieces/${key}/placed`
         ] = true;
 
         updates[
           `rooms/${roomCode}/pieces/${key}/placedBy`
-        ] = playerId;
+        ] = null;
 
         updates[
           `rooms/${roomCode}/pieces/${key}/movedBy`
-        ] = playerId;
+        ] = "cheat";
 
         updates[
           `rooms/${roomCode}/pieces/${key}/movedAt`
@@ -1192,12 +1527,14 @@ export default function Game({
       }
     );
 
+    updates[`rooms/${roomCode}/cheatedBy`] = playerId;
+    updates[`rooms/${roomCode}/completionMode`] = "cheat";
+
     update(ref(db), updates)
       .then(() => {
+        setRoom((current) => current ? { ...current, cheatedBy: playerId } : current);
         setFinished(true);
-        setToast(
-          "Puzzle tamamlandı 🎉"
-        );
+        setToast("Puzzle tamamlandı.");
       })
       .catch((error) => {
         console.error(
@@ -1358,12 +1695,8 @@ export default function Game({
     room.boardH /
     room.rows;
 
-  const trayRows =
-    Math.ceil(
-      (room.rows *
-        room.cols) /
-        5
-    );
+  const trayCols = Math.max(5, Math.min(10, Math.ceil(Math.sqrt(totalPiecesForLayout(room.rows, room.cols) * 1.2))));
+  const trayRows = Math.ceil((room.rows * room.cols) / trayCols);
 
   const canvasHeight =
     trayTop +
@@ -1413,11 +1746,21 @@ export default function Game({
 
   return (
     <div className="game">
+      {gameAvatarViewer && (
+        <div className="avatar-viewer-backdrop" onClick={() => setGameAvatarViewer(null)}>
+          <div className="avatar-viewer" onClick={e => e.stopPropagation()}>
+            <button className="avatar-viewer-close" onClick={() => setGameAvatarViewer(null)} aria-label="Kapat">×</button>
+            <img src={gameAvatarViewer.src} alt={gameAvatarViewer.name || "Profil fotoğrafı"} />
+            <strong>{gameAvatarViewer.name || "Oyuncu"}</strong>
+          </div>
+        </div>
+      )}
       <div className="game-header">
         <div className="header-left">
-          <span className="room-badge">
-            Oda: {roomCode}
-          </span>
+          <span className="room-badge">Oda: {roomCode}</span>
+          <span className="stat-badge">{room.difficultyName || "Klasik"}</span>
+          <span className="stat-badge">{formatTime(elapsed)}</span>
+          <span className="stat-badge">Yardım: {hintsLeft ?? 0}</span>
 
           <button
             className="btn tiny"
@@ -1433,8 +1776,28 @@ export default function Game({
           <button
             className="btn tiny ghost"
             onClick={
-              completePuzzleCheat
+              findMissingPiece
             }
+            title="Rastgele tamamlanmamış bir parçayı gösterir"
+          >
+            Kayıp parçayı bul
+          </button>
+
+          {room.rotatePieces && (
+            <button className="btn tiny ghost" onClick={rotateSelectedPiece} disabled={!selectedPieceKey}>
+              Parçayı döndür
+            </button>
+          )}
+
+          {room.previewAllowed !== false && (
+            <button className="btn tiny ghost" onClick={() => setShowPreview(v => !v)}>
+              {showPreview ? "Önizlemeyi gizle" : "Fotoğrafı göster"}
+            </button>
+          )}
+
+          <button
+            className="btn tiny ghost"
+            onClick={() => setShowCheatConfirm(true)}
             title="Kalan parçaları tamamlar"
           >
             Şifreli puzzleı tamamla
@@ -1453,14 +1816,9 @@ export default function Game({
 
       <div className="progress-area">
         <div className="progress-row">
-          <span
-            className="dot"
-            style={{
-              background:
-                me?.color ||
-                COLORS[0],
-            }}
-          />
+          <span className="game-player-avatar" onClick={() => me?.avatar && setGameAvatarViewer({ src: me.avatar, name: me?.name || "Sen" })}>
+            {me?.avatar ? <img src={me.avatar} alt="" /> : <i style={{ background: me?.color || COLORS[0] }} />}
+          </span>
 
           <span className="progress-label">
             {me?.name ||
@@ -1485,15 +1843,9 @@ export default function Game({
         </div>
 
         <div className="progress-row">
-          <span
-            className="dot"
-            style={{
-              background:
-                partnerEntry?.[1]
-                  ?.color ||
-                COLORS[1],
-            }}
-          />
+          <span className="game-player-avatar" onClick={() => partnerEntry?.[1]?.avatar && setGameAvatarViewer({ src: partnerEntry[1].avatar, name: partnerName })}>
+            {partnerEntry?.[1]?.avatar ? <img src={partnerEntry[1].avatar} alt="" /> : <i style={{ background: partnerEntry?.[1]?.color || COLORS[1] }} />}
+          </span>
 
           <span className="progress-label">
             {partnerName}
@@ -1518,11 +1870,12 @@ export default function Game({
         </div>
       </div>
 
-      {toast && (
-        <div className="toast">
-          {toast}
-        </div>
-      )}
+      {toast && <div className="toast">{toast}</div>}
+      {partnerReaction && <div className="reaction-toast">{partnerReaction.name}: {partnerReaction.text}</div>}
+
+      <div className="game-tools">
+        <div className="tool-group"><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.1).toFixed(2)))}>−</button><span className="zoom-label">{Math.round(zoom * 100)}%</span><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button><button className="btn tiny ghost" onClick={() => setZoom(1)}>Sığdır</button></div><div className="reaction-group">{["Bulduğum!", "Yaklaştım", "Tamamdır"].map((r) => <button key={r} className="btn tiny ghost" onClick={async () => { setReaction(r); window.clearTimeout(window.__reactionTimer); window.__reactionTimer = window.setTimeout(() => setReaction(""), 1400); await set(ref(db, `rooms/${roomCode}/reactions/${playerId}`), { text: r, name: me?.name || "Sen", at: Date.now() }); }}>{r}</button>)}</div>
+      </div>
 
       <div className="canvas-wrap">
         <canvas
@@ -1531,9 +1884,9 @@ export default function Game({
           height={canvasHeight}
           style={{
             display: "block",
-            width: "min(100%, 900px)",
+            width: `${Math.min(1400, 900 * zoom)}px`,
             height: "auto",
-            maxWidth: "900px",
+            maxWidth: "none",
             touchAction: "none",
             userSelect: "none",
             WebkitUserSelect: "none",
@@ -1541,15 +1894,15 @@ export default function Game({
           onPointerDown={
             handlePointerDown
           }
+          onDoubleClick={handleDoubleClick}
           onPointerMove={
             handlePointerMove
           }
           onPointerUp={
             handlePointerUp
           }
-          onPointerCancel={
-            handlePointerUp
-          }
+          onPointerCancel={handlePointerUp}
+          onContextMenu={(e) => e.preventDefault()}
         />
       </div>
 
@@ -1561,73 +1914,66 @@ export default function Game({
         kilitlenir.
       </p>
 
+      <button
+        className={`room-chat-launcher ${chatOpen ? "open" : ""}`}
+        onClick={() => {
+          setChatOpen((v) => {
+            const next = !v;
+            if (next) {
+              localStorage.setItem(`roomChatRead:${roomCode}:${playerId}`, String(Date.now()));
+              setChatUnread(false);
+            }
+            return next;
+          });
+        }}
+        title="Oda sohbeti"
+        aria-label="Oda sohbeti"
+      >
+        <span className="room-chat-launcher-icon" aria-hidden="true"></span>
+        <span className="room-chat-launcher-label">Sohbet</span>
+        {chatUnread && <b>1</b>}
+      </button>
+
+      {chatOpen && (
+        <div className="room-chat-panel">
+          <div className="room-chat-head">
+            <div><span className="panel-kicker">ORTAK ODA</span><strong>Sohbet</strong></div>
+            <button className="drawer-close" onClick={() => setChatOpen(false)}>×</button>
+          </div>
+          <div className="room-chat-messages">
+            {chatMessages.length === 0 ? <div className="chat-empty">Henüz mesaj yok. İlk mesajı sen gönder.</div> :
+              chatMessages.map(m => <div key={m.id} className={`room-chat-bubble ${m.senderId === playerId ? "mine" : ""}`}><b>{m.senderId === playerId ? "Sen" : m.name || "Oyuncu"}</b><span>{m.text}</span><small>{new Date(m.at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</small></div>)}
+          </div>
+          <div className="room-chat-compose">
+            <input value={chatText} onChange={e => setChatText(e.target.value.slice(0,300))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendRoomMessage(); } }} placeholder="Mesaj yaz..." />
+            <button className="btn primary" onClick={sendRoomMessage}>Gönder</button>
+          </div>
+        </div>
+      )}
+
+      {showCheatConfirm && (
+        <div className="modal-backdrop"><div className="confirm-card"><div className="confirm-kicker">KARARINI KESİNLEŞTİR</div><h2>Puzzle'ı senin yerine tamamlayalım mı?</h2><p>Kalan parçalar doğru konum ve yönde otomatik yerleştirilecek. Bu işlem normal çözüm olarak ödüllendirilmeyecek.</p><div className="row-buttons"><button className="btn ghost" onClick={() => setShowCheatConfirm(false)}>Vazgeç</button><button className="btn primary" onClick={() => { setShowCheatConfirm(false); completePuzzleCheat(); }}>Puzzle'ı tamamla</button></div></div></div>
+      )}
+
       {finished && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 100,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px",
-            background:
-              "rgba(255,248,250,0.92)",
-            backdropFilter:
-              "blur(8px)",
-          }}
-        >
-          <div
-            style={{
-              width: "min(420px, 100%)",
-              padding: "32px 24px",
-              textAlign: "center",
-              borderRadius: "24px",
-              background: "#fff",
-              border:
-                "1px solid #ead6dd",
-              boxShadow:
-                "0 20px 60px rgba(70,40,50,0.16)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "54px",
-                marginBottom: "10px",
-              }}
-            >
-              🎉
+        <div className="finish-overlay">
+          <div className="finish-orbit orbit-one" /><div className="finish-orbit orbit-two" />
+          <div className="finish-card premium-finish">
+            <div className="finish-ribbon">PUZZLE TAMAMLANDI</div>
+            <div className="finish-photo-frame">
+              <img src={room.image} alt="Tamamlanan puzzle" />
+              <div className="finish-photo-shine" />
             </div>
-
-            <h2
-              style={{
-                margin:
-                  "0 0 8px",
-                color: "#4a303b",
-              }}
-            >
-              Puzzle tamamlandı!
-            </h2>
-
-            <p
-              style={{
-                margin:
-                  "0 0 20px",
-                color: "#856d76",
-              }}
-            >
-              Tebrikler, bütün parçaları
-              tamamladın.
-            </p>
-
-            <button
-              className="btn primary"
-              onClick={() =>
-                setFinished(false)
-              }
-            >
-              Puzzle'a dön
-            </button>
+            <p className="finish-kicker">BİRLİKTE BİTTİ</p>
+            <h2>Bu anıyı tamamladınız.</h2>
+            <p className="finish-copy">Son parça yerine oturdu. Şimdi ortaya çıkan fotoğrafın tadını çıkar.</p>
+            {reward && <div className="reward-box"><b>+{reward.gainedXp} XP</b><span>Seviye {reward.level}</span>{reward.newBadges?.length > 0 && <em>{reward.newBadges.length} yeni rozet</em>}</div>}
+            <div className="finish-stats">
+              <div><b>{total}</b><span>parça</span></div>
+              <div><b>{formatTime(elapsed)}</b><span>süre</span></div>
+              <div><b>{hintsLeft ?? 0}</b><span>kalan yardım</span></div>
+            </div>
+            <button className="btn primary finish-button" onClick={() => { completionDismissedRef.current = true; setFinished(false); }}>Puzzle'a bak</button>
           </div>
         </div>
       )}
