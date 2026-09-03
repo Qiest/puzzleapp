@@ -23,14 +23,21 @@ export default function App() {
 
     if (!roomFromUrl) return;
 
-    const code = roomFromUrl.toUpperCase();
-    setRoom({
-      code,
-      pendingJoin: true,
-    });
+    const code = roomFromUrl.trim().toUpperCase();
+    if (!code || !/^[A-Z0-9_-]{1,32}$/.test(code)) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
 
-    // Davet linkiyle gelen kullanıcı hesap açmadan bir kez misafir olarak
-    // katılabilsin. Firebase Anonymous Auth geçici bir UID sağlar.
+    setRoom((current) =>
+      current?.code === code
+        ? current
+        : { code, pendingJoin: true }
+    );
+
+    // Giriş yapmış kayıtlı kullanıcı aynen kendi hesabıyla odaya girer.
+    // Sadece tamamen çıkış yapılmış bir kullanıcı davet linkini açtıysa
+    // geçici anonim oturum oluşturulur.
     if (user === null) {
       signInAnonymously(auth).catch((err) => {
         console.error("Misafir oturumu başlatılamadı:", err);
