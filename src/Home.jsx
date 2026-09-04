@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { ref, set, get, update, onValue, push, remove, onDisconnect } from "firebase/database";
-import { auth, db } from "./firebase.js";
+import { ref, set, get, update, onValue, push, remove, onDisconnect, query, orderByChild, startAt, endAt } from "firebase/database";
+import { auth, db, storage } from "./firebase.js";
 import { signOut, updatePassword } from "firebase/auth";
+import { ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
 import { computeGrid, generateEdges, pieceEdges, mulberry32, scatterPosition, createShuffledOrder, makeRoomCode } from "./puzzleUtils.js";
 
 const DIFFICULTIES = [
@@ -62,7 +63,7 @@ function resizeImage(file) {
   });
 }
 
-export default function Home({ onEnterRoom, user, playerName }) {
+export default function Home({ onEnterRoom, user, playerName, theme = "light", onToggleTheme }) {
   const [mode, setMode] = useState("choose");
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -134,11 +135,12 @@ export default function Home({ onEnterRoom, user, playerName }) {
           if (bs.exists()) blockedLoaded.push({ uid: id, ...bs.val() });
         }
         if (!cancelled) setBlockedProfiles(blockedLoaded);
-        const normalized = { ...data, profileVisible: data.profileVisible !== false, allowFriendRequests: data.allowFriendRequests !== false, allowMessages: data.allowMessages !== false, avatar: typeof data.avatar === "string" ? data.avatar : "", name: typeof data.name === "string" && data.name.trim() ? data.name.trim().slice(0, 40) : (playerName || "Oyuncu"), email: typeof data.email === "string" ? data.email : (user.email || ""), puzzlesRemaining: data.puzzlesRemaining === undefined ? 3 : Math.max(0, Math.floor(safeNumber(data.puzzlesRemaining, 0))), xp: Math.max(0, safeNumber(data.xp, 0)), completedPuzzles: Math.max(0, Math.floor(safeNumber(data.completedPuzzles, 0))), togetherPuzzles: Math.max(0, Math.floor(safeNumber(data.togetherPuzzles, 0))), totalTime: Math.max(0, safeNumber(data.totalTime, 0)), bestTime: Math.max(0, safeNumber(data.bestTime, 0)), badges: Array.isArray(data.badges) ? data.badges : [], history: Array.isArray(data.history) ? data.history : [] };
+        const normalized = { ...data, profileVisible: data.profileVisible !== false, allowFriendRequests: data.allowFriendRequests !== false, allowMessages: data.allowMessages !== false, avatar: typeof data.avatar === "string" ? data.avatar : "", name: typeof data.name === "string" && data.name.trim() ? data.name.trim().slice(0, 40) : (playerName || "Oyuncu"), nameLower: (typeof data.name === "string" && data.name.trim() ? data.name.trim().slice(0, 40) : (playerName || "Oyuncu")).toLowerCase(), email: typeof data.email === "string" ? data.email : (user.email || ""), puzzlesRemaining: data.puzzlesRemaining === undefined ? 3 : Math.max(0, Math.floor(safeNumber(data.puzzlesRemaining, 0))), xp: Math.max(0, safeNumber(data.xp, 0)), completedPuzzles: Math.max(0, Math.floor(safeNumber(data.completedPuzzles, 0))), togetherPuzzles: Math.max(0, Math.floor(safeNumber(data.togetherPuzzles, 0))), totalTime: Math.max(0, safeNumber(data.totalTime, 0)), bestTime: Math.max(0, safeNumber(data.bestTime, 0)), badges: Array.isArray(data.badges) ? data.badges : [], history: Array.isArray(data.history) ? data.history : [] };
         await update(ref(db, `users/${user.uid}`), normalized);
         if (!user.isAnonymous) {
           await update(ref(db, `publicProfiles/${user.uid}`), {
             name: normalized.name,
+            nameLower: normalized.name.toLowerCase(),
             email: normalized.email,
             avatar: normalized.avatar || "",
             xp: normalized.xp,
@@ -193,12 +195,15 @@ export default function Home({ onEnterRoom, user, playerName }) {
         img.onerror = () => reject(new Error("Profil fotoğrafı okunamadı."));
         reader.readAsDataURL(file);
       });
+      const avatarRef = storageRef(storage, `profileAvatars/${user.uid}.jpg`);
+      await uploadString(avatarRef, avatar, "data_url", { contentType: "image/jpeg" });
+      const avatarUrl = await getDownloadURL(avatarRef);
       await update(ref(db), {
-        [`users/${user.uid}/avatar`]: avatar,
-        [`publicProfiles/${user.uid}/avatar`]: avatar,
+        [`users/${user.uid}/avatar`]: avatarUrl,
+        [`publicProfiles/${user.uid}/avatar`]: avatarUrl,
       });
-      setProfileAvatar(avatar);
-      setProfile(current => ({ ...(current || {}), avatar }));
+      setProfileAvatar(avatarUrl);
+      setProfile(current => ({ ...(current || {}), avatar: avatarUrl }));
       setSocialMessage("Profil fotoğrafın güncellendi.");
     } catch (e) {
       console.error(e);
@@ -211,10 +216,11 @@ export default function Home({ onEnterRoom, user, playerName }) {
     if (!q || user?.isAnonymous) { setSocialResults([]); return; }
     setSocialBusy(true); setSocialMessage("");
     try {
-      const snap = await get(ref(db, "publicProfiles"));
+      const profilesQuery = query(ref(db, "publicProfiles"), orderByChild("nameLower"), startAt(q), endAt(`${q}\uf8ff`));
+      const snap = await get(profilesQuery);
       const all = snap.val() || {};
       const result = Object.entries(all)
-        .filter(([uid, p]) => uid !== user.uid && p?.profileVisible !== false && String(p?.name || "").toLowerCase().includes(q))
+        .filter(([uid, p]) => uid !== user.uid && p?.profileVisible !== false)
         .slice(0, 8)
         .map(([uid, p]) => ({ uid, ...p }));
       setSocialResults(result);
@@ -377,7 +383,6 @@ export default function Home({ onEnterRoom, user, playerName }) {
         [`users/${user.uid}/friends/${request.uid}`]: true,
         [`users/${request.uid}/friends/${user.uid}`]: true,
         [`friendRequests/${user.uid}/${request.uid}`]: null,
-        [`users/${request.uid}/sentFriendRequests/${user.uid}`]: null,
       });
       setSocialMessage(`${request.name || "Oyuncu"} artık arkadaşın.`);
       const ps = await get(ref(db, `publicProfiles/${request.uid}`));
@@ -509,10 +514,12 @@ export default function Home({ onEnterRoom, user, playerName }) {
     try {
       await update(ref(db), {
         [`users/${user.uid}/name`]: nextName,
+        [`users/${user.uid}/nameLower`]: nextName.toLowerCase(),
         [`users/${user.uid}/profileVisible`]: profileVisible,
         [`users/${user.uid}/allowFriendRequests`]: allowFriendRequests,
         [`users/${user.uid}/allowMessages`]: allowMessages,
         [`publicProfiles/${user.uid}/name`]: nextName,
+        [`publicProfiles/${user.uid}/nameLower`]: nextName.toLowerCase(),
         [`publicProfiles/${user.uid}/avatar`]: profileAvatar || "",
         [`publicProfiles/${user.uid}/profileVisible`]: profileVisible,
         [`publicProfiles/${user.uid}/allowFriendRequests`]: allowFriendRequests,
@@ -710,15 +717,18 @@ export default function Home({ onEnterRoom, user, playerName }) {
           rotation: selected.rotate ? [0, 90, 180, 270][Math.floor(rand() * 4)] : 0,
         };
       }
+      const roomImageRef = storageRef(storage, `roomImages/${user.uid}/${code}.jpg`);
+      await uploadString(roomImageRef, dataUrl, "data_url", { contentType: "image/jpeg" });
+      const imageUrl = await getDownloadURL(roomImageRef);
+
       await set(ref(db, `rooms/${code}`), {
         ownerUid: user.uid,
-        image: dataUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
+        image: imageUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,
-        createdAt: Date.now(), pieces, players: {
-          [user.uid]: { name: name.trim() || playerName || "Oyuncu", connected: true, joinedAt: Date.now() }
-        },
+        createdAt: Date.now(), players: {},
       });
+      await set(ref(db, `rooms/${code}/pieces`), pieces);
       const nextRemaining = Math.max(0, (Number(puzzlesRemaining) || 3) - 1);
       await set(ref(db, `users/${user.uid}/puzzlesRemaining`), nextRemaining);
       setPuzzlesRemaining(nextRemaining);
@@ -750,27 +760,7 @@ export default function Home({ onEnterRoom, user, playerName }) {
     try {
       const snap = await get(ref(db, `rooms/${code}`));
       if (!snap.exists()) return setError("Böyle bir oda bulunamadı.");
-
-      // Misafirler de davetli/oda koduyla oynayabilir. Sadece oda oluşturamazlar.
-      const room = snap.val() || {};
-      const currentPlayers = room.players || {};
-      const playerUid = user?.uid;
-      if (!playerUid) return setError("Oyuncu oturumu hazır değil.");
-
-      const activePlayers = Object.values(currentPlayers).filter((p) => p?.connected === true);
-      if (activePlayers.length >= 2 && !currentPlayers[playerUid]) {
-        return setError("Bu oda dolu. En fazla 2 oyuncu katılabilir.");
-      }
-
-      // Child path'e doğrudan yaz: oda sahibi olmayan oyuncunun join işlemi
-      // room kökündeki owner-only write kuralına takılmasın.
-      await update(ref(db, `rooms/${code}/players/${playerUid}`), {
-        name: name.trim() || playerName || (user?.isAnonymous ? "Misafir" : "Oyuncu"),
-        connected: true,
-        joinedAt: currentPlayers[playerUid]?.joinedAt || Date.now(),
-      });
-
-      onEnterRoom(code, name.trim() || playerName || (user?.isAnonymous ? "Misafir" : "Oyuncu"), true);
+      onEnterRoom(code, name.trim() || playerName || "Oyuncu", true);
     } catch (e) { console.error(e); setError(e?.message || "Odaya bağlanılamadı."); }
     finally { setBusy(false); }
   }
@@ -902,6 +892,7 @@ export default function Home({ onEnterRoom, user, playerName }) {
             <div className="drawer-account-actions"><button className="btn primary" onClick={() => { setEditName(profile.name || ""); setSettingsTab("profile"); setSettingsOpen(true); }}>Profili düzenle</button></div>
             <div className="drawer-xp"><div><span>Seviye ilerlemesi</span><b>{(profile.xp || 0) % 500} / 500 XP</b></div><div className="xp-track"><i style={{width: `${Math.min(100, ((profile.xp || 0) % 500) / 5)}%`}} /></div></div>
             <div className="drawer-stat-grid"><div><b>{profile.completedPuzzles || 0}</b><span>Puzzle</span></div><div><b>{profile.togetherPuzzles || 0}</b><span>Birlikte</span></div><div><b>{profile.bestTime ? formatHomeTime(profile.bestTime) : "—"}</b><span>Rekor</span></div></div>
+            <section className="drawer-section history-section"><div className="drawer-section-title"><span>YAPILAN PUZZLELAR</span><b>{Array.isArray(profile.history) ? profile.history.length : 0}</b></div>{Array.isArray(profile.history) && profile.history.length > 0 ? <div className="history-grid">{profile.history.slice(0,20).map((item,index)=><div className="history-card" key={`${item.roomCode || "puzzle"}-${item.completedAt || index}`}>{item.imageUrl ? <img src={item.imageUrl} alt="Tamamlanan puzzle" loading="lazy"/> : <div className="history-image-placeholder">PUZZLE</div>}<div className="history-card-copy"><strong>{item.difficulty || "Puzzle"}</strong><span>{item.pieces || "—"} parça · {formatHomeTime(item.time)}</span><small>{item.completedAt ? new Date(item.completedAt).toLocaleDateString("tr-TR") : ""}</small></div></div>)}</div> : <div className="social-empty">Henüz tamamladığın puzzle yok.</div>}</section>
             <section className="drawer-section"><div className="drawer-section-title"><span>ROZETLER</span><b>{profile.badges?.length || 0} / {BADGES.length}</b></div><div className="drawer-badges">{BADGES.map(b => { const earned = profile.badges?.includes(b.id); return <div key={b.id} className={`drawer-badge ${earned ? "earned" : "locked"}`}><i>{earned ? "✓" : "·"}</i><span>{b.name}</span></div>; })}</div></section>
             {!user?.isAnonymous && <section className="drawer-section social-section"><div className="drawer-section-title"><span>SOSYAL</span><b>{friends.length} arkadaş</b></div><div className="social-search"><input value={socialQuery} onChange={e => setSocialQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") searchProfiles(); }} placeholder="Oyuncu adı ara"/><button className="btn primary" onClick={searchProfiles} disabled={socialBusy}>{socialBusy ? "..." : "Ara"}</button></div>{socialMessage && <div className="social-message">{socialMessage}</div>}{socialResults.length > 0 && <div className="social-results">{socialResults.map(p => <div className="social-result" key={p.uid}><div className="mini-avatar avatar-click" onClick={() => p.avatar && setAvatarViewer({ src: p.avatar, name: p.name || "Oyuncu" })}>{p.avatar ? <img src={p.avatar} alt="" /> : (p.name || "O").slice(0,1).toUpperCase()}</div><div><strong>{p.name || "Oyuncu"}</strong><span>Seviye {getLevel(p.xp)} · {p.completedPuzzles || 0} puzzle</span></div><button className="btn tiny ghost" onClick={() => openProfile(p)}>Profil</button><button className="btn tiny ghost" disabled={!!sentRequests[p.uid]} onClick={() => addFriend(p)}>{sentRequests[p.uid] ? "Gönderildi" : "Ekle"}</button></div>)}</div>}<div className="friend-list">{friends.map(f => <div className="friend-row" key={f.uid}>
 <div className="mini-avatar" onClick={() => openProfile(f)}>{f.avatar ? <img src={f.avatar} alt="" /> : (f.name || "O").slice(0,1).toUpperCase()}</div>
@@ -944,6 +935,7 @@ export default function Home({ onEnterRoom, user, playerName }) {
               <div className="settings-form">
                 <label className="settings-avatar profile-avatar profile-avatar-large profile-avatar-edit">{profileAvatar ? <img src={profileAvatar} alt="" /> : <span>{(editName || "O").slice(0,1).toUpperCase()}</span>}<input type="file" accept="image/*" onChange={e => updateProfileAvatar(e.target.files?.[0])}/><i>+</i></label>
                 <label className="field"><span>Görünen ad</span><input value={editName} onChange={e => setEditName(e.target.value)} maxLength={40}/></label>
+                <div className="settings-option theme-option"><div><strong>Koyu tema</strong><span>Puzzle alanı ve arayüzü koyu görünüme geçir.</span></div><button className={`switch ${theme === "dark" ? "on" : ""}`} onClick={onToggleTheme}><i/></button></div>
                 <button className="btn primary settings-save" disabled={settingsBusy} onClick={saveProfileSettings}>{settingsBusy ? "Kaydediliyor..." : "Değişiklikleri kaydet"}</button>
               </div>
             ) : (
