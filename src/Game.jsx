@@ -97,39 +97,57 @@ export default function Game({
   const roomPieces = roomRows * roomCols;
   const logicalPieceW = room?.boardW ? room.boardW / roomCols : 0;
   const logicalPieceH = room?.boardH ? room.boardH / roomRows : 0;
+  // Yan tepsiler geniş ekranın gerçek boşluğunu kullanır. Sabit küçük kolonlar
+  // yerine ekran genişliğine göre büyüyüp/küçülür; 50/100 parçada parçaları
+  // mümkün olduğunca tepsiye sığdırırız.
   const sideTrayWidth = sideTrayMode
-    ? Math.min(300, Math.max(190, Math.round(viewport.width * 0.16)))
+    ? Math.min(460, Math.max(300, Math.round(viewport.width * 0.27)))
     : 0;
-  // Üç kolon, yan tepsiyi gerçek bir "parça havuzu" gibi tutuyor.
-  // 19" gibi geniş ekranlarda da dört kolona çıkabilir.
-  const trayColumns = sideTrayMode
-    ? Math.max(3, Math.min(4, Math.floor(sideTrayWidth / 78)))
+  const trayAvailableHeight = sideTrayMode
+    ? Math.max(420, viewport.height - 255)
+    : 0;
+  const trayGap = 5;
+  const sidePieceCount = Math.ceil(roomPieces / 2);
+  const baseCenterWidth = sideTrayMode
+    ? Math.max(360, viewport.width - sideTrayWidth * 2 - 40)
+    : 0;
+  const baseCenterHeight = sideTrayMode
+    ? Math.max(320, viewport.height - 285)
+    : 0;
+  const naturalBoardScale = sideTrayMode && canvasWidth && room?.boardH
+    ? Math.min(1, baseCenterWidth / canvasWidth, baseCenterHeight / room.boardH)
     : 1;
-  const trayCellWidth = sideTrayMode
-    ? Math.max(42, (sideTrayWidth - 12 - (trayColumns - 1) * 5) / trayColumns)
-    : 0;
-  const trayRowsPerSide = sideTrayMode
-    ? Math.ceil(Math.ceil(roomPieces / 2) / trayColumns)
-    : 0;
-  const trayAvailableHeight = Math.max(360, viewport.height - 270);
-  const trayRowHeight = sideTrayMode
-    ? Math.max(42, trayAvailableHeight / Math.max(1, trayRowsPerSide))
-    : 0;
-  const trayCanvasWidthLimit = Math.max(20, trayCellWidth - 2);
-  const trayCanvasHeightLimit = Math.max(20, trayRowHeight - 3);
-  const trayScale = sideTrayMode && logicalPieceW && logicalPieceH
-    ? Math.min(
-        1,
-        trayCanvasWidthLimit / (logicalPieceW + PAD * 2),
-        trayCanvasHeightLimit / (logicalPieceH + PAD * 2)
-      )
-    : 1;
+
+  // 50 ve 100 parçada hedef: yan tepsilere kaydırma olmadan sığdır.
+  // 200+ parçada ise parçaları gereksiz küçültmek yerine tepsiyi kaydırılabilir
+  // bırakıyoruz. Böylece puzzle ortada okunaklı kalıyor.
+  const fitScaleForTrays = (() => {
+    if (!sideTrayMode || !logicalPieceW || !logicalPieceH || roomPieces > 100) return naturalBoardScale;
+    const maxScale = naturalBoardScale;
+    const minScale = 0.28;
+    let best = minScale;
+    for (let s = maxScale; s >= minScale; s -= 0.005) {
+      const pieceW = (logicalPieceW + PAD * 2) * s;
+      const pieceH = (logicalPieceH + PAD * 2) * s;
+      const columns = Math.max(1, Math.min(8, Math.floor((sideTrayWidth - 16 + trayGap) / (pieceW + trayGap))));
+      const rows = Math.ceil(sidePieceCount / columns);
+      const neededH = rows * pieceH + Math.max(0, rows - 1) * trayGap + 12;
+      if (neededH <= trayAvailableHeight) { best = s; break; }
+    }
+    return best;
+  })();
+
+  const boardScale = sideTrayMode ? fitScaleForTrays : 1;
+  const trayScale = boardScale;
   const trayPieceWidth = sideTrayMode
-    ? Math.max(18, Math.round((logicalPieceW + PAD * 2) * trayScale))
+    ? Math.max(24, Math.round((logicalPieceW + PAD * 2) * trayScale))
     : 0;
   const trayPieceHeight = sideTrayMode
-    ? Math.max(18, Math.round((logicalPieceH + PAD * 2) * trayScale))
+    ? Math.max(24, Math.round((logicalPieceH + PAD * 2) * trayScale))
     : 0;
+  const trayColumns = sideTrayMode
+    ? Math.max(2, Math.min(8, Math.floor((sideTrayWidth - 16 + trayGap) / Math.max(1, trayPieceWidth + trayGap))))
+    : 1;
 
   const startedAtRef = useRef(null);
 
@@ -2028,9 +2046,6 @@ export default function Game({
 
   // Side tray kullanırken tahta ölçeğini de aynı trayScale'e bağla.
   // Böylece parça tepside kaç px ise tahtaya gelince de aynı px kalır.
-  const boardScale = sideTrayMode
-    ? Math.min(trayScale, availableBoardWidth / canvasWidth, availableBoardHeight / room.boardH)
-    : Math.min(1, availableBoardWidth / canvasWidth, availableBoardHeight / canvasHeight);
   const canvasCssWidth = sideTrayMode
     ? Math.max(1, Math.round(canvasWidth * boardScale))
     : Math.max(260, Math.round(canvasWidth * boardScale));
@@ -2228,6 +2243,8 @@ export default function Game({
         style={sideTrayMode ? {
           "--side-tray-width": `${sideTrayWidth}px`,
           "--tray-piece-size": `${trayPieceWidth}px`,
+          "--tray-piece-height": `${trayPieceHeight}px`,
+          "--side-tray-height": `${trayAvailableHeight}px`,
           "--board-css-height": `${canvasCssHeight}px`,
         } : undefined}
       >
