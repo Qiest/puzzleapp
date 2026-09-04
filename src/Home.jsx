@@ -716,7 +716,7 @@ export default function Home({ onEnterRoom, user, playerName }) {
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,
         createdAt: Date.now(), pieces, players: {
-          [user.uid]: { name: name.trim() || playerName || "Oyuncu", joinedAt: Date.now() }
+          [user.uid]: { name: name.trim() || playerName || "Oyuncu", connected: true, joinedAt: Date.now() }
         },
       });
       const nextRemaining = Math.max(0, (Number(puzzlesRemaining) || 3) - 1);
@@ -750,20 +750,27 @@ export default function Home({ onEnterRoom, user, playerName }) {
     try {
       const snap = await get(ref(db, `rooms/${code}`));
       if (!snap.exists()) return setError("Böyle bir oda bulunamadı.");
+
+      // Misafirler de davetli/oda koduyla oynayabilir. Sadece oda oluşturamazlar.
       const room = snap.val() || {};
       const currentPlayers = room.players || {};
       const playerUid = user?.uid;
-      if (!playerUid) return setError("Oyuncu hesabı hazır değil.");
-      if (Object.keys(currentPlayers).length >= 4 && !currentPlayers[playerUid]) {
-        return setError("Bu oda dolu.");
+      if (!playerUid) return setError("Oyuncu oturumu hazır değil.");
+
+      const activePlayers = Object.values(currentPlayers).filter((p) => p?.connected === true);
+      if (activePlayers.length >= 2 && !currentPlayers[playerUid]) {
+        return setError("Bu oda dolu. En fazla 2 oyuncu katılabilir.");
       }
-      await update(ref(db, `rooms/${code}`), {
-        [`players/${playerUid}`]: {
-          name: name.trim() || playerName || "Oyuncu",
-          joinedAt: Date.now()
-        }
+
+      // Child path'e doğrudan yaz: oda sahibi olmayan oyuncunun join işlemi
+      // room kökündeki owner-only write kuralına takılmasın.
+      await update(ref(db, `rooms/${code}/players/${playerUid}`), {
+        name: name.trim() || playerName || (user?.isAnonymous ? "Misafir" : "Oyuncu"),
+        connected: true,
+        joinedAt: currentPlayers[playerUid]?.joinedAt || Date.now(),
       });
-      onEnterRoom(code, name.trim() || playerName || "Oyuncu", true);
+
+      onEnterRoom(code, name.trim() || playerName || (user?.isAnonymous ? "Misafir" : "Oyuncu"), true);
     } catch (e) { console.error(e); setError(e?.message || "Odaya bağlanılamadı."); }
     finally { setBusy(false); }
   }
