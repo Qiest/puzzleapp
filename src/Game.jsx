@@ -70,6 +70,7 @@ export default function Game({
     useState(false);
 
   const [selectedPieceKey, setSelectedPieceKey] = useState(null);
+  const activePieceKeyRef = useRef(null);
   const [hintsLeft, setHintsLeft] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
@@ -1137,6 +1138,7 @@ export default function Game({
     p.rotation = ((Number(p.rotation) || 0) + 90) % 360;
     p.movedBy = playerId;
     p.movedAt = Date.now();
+    activePieceKeyRef.current = key;
     setSelectedPieceKey(key);
     dirtyRef.current = true;
     staticDirtyRef.current = true;
@@ -1190,7 +1192,8 @@ export default function Game({
   }
 
   function rotateSelectedPiece() {
-    rotatePiece(selectedPieceKey);
+    const key = activePieceKeyRef.current || selectedPieceKey;
+    if (key) rotatePiece(key);
   }
 
   function handleDoubleClick(e) {
@@ -1600,6 +1603,7 @@ export default function Game({
           fromTray: sideTrayMode && !p.movedAt,
         };
 
+        activePieceKeyRef.current = key;
         setSelectedPieceKey(key);
         zCounterRef.current += 1;
         zOrderRef.current[key] = zCounterRef.current;
