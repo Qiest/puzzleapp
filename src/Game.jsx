@@ -89,66 +89,54 @@ export default function Game({
   // aksi halde useEffect dependency array'inde TDZ (before initialization) oluşur.
   const isLandscape = viewport.width > viewport.height;
   const sideTrayMode = isLandscape && viewport.width >= 600;
-
-  // Yan tepsilerdeki parça ile tahtadaki parça aynı CSS ölçeğinde kalır.
-  // Böylece tepsiden tahtaya alınca parça büyümüş gibi görünmez.
   const canvasWidth = room?.boardW || 0;
+
   const roomRows = Math.max(1, Number(room?.rows) || 1);
   const roomCols = Math.max(1, Number(room?.cols) || 1);
   const roomPieces = roomRows * roomCols;
   const logicalPieceW = room?.boardW ? room.boardW / roomCols : 0;
   const logicalPieceH = room?.boardH ? room.boardH / roomRows : 0;
-  // Yan tepsiler geniş ekranın gerçek boşluğunu kullanır. Sabit küçük kolonlar
-  // yerine ekran genişliğine göre büyüyüp/küçülür; 50/100 parçada parçaları
-  // mümkün olduğunca tepsiye sığdırırız.
+
+  // Yan alanlar sadece başlangıç yeridir; puzzle'ı küçültmek için kullanılmaz.
   const sideTrayWidth = sideTrayMode
-    ? Math.min(460, Math.max(300, Math.round(viewport.width * 0.27)))
+    ? Math.max(175, Math.min(285, Math.round(viewport.width * 0.15)))
     : 0;
-  const trayAvailableHeight = sideTrayMode
-    ? Math.max(420, viewport.height - 255)
+  const sideGap = sideTrayMode
+    ? Math.max(8, Math.min(18, Math.round(viewport.width * 0.008)))
     : 0;
-  const trayGap = 5;
-  const sidePieceCount = Math.ceil(roomPieces / 2);
-  const baseCenterWidth = sideTrayMode
-    ? Math.max(360, viewport.width - sideTrayWidth * 2 - 40)
-    : 0;
-  const baseCenterHeight = sideTrayMode
-    ? Math.max(320, viewport.height - 285)
-    : 0;
-  const naturalBoardScale = sideTrayMode && canvasWidth && room?.boardH
-    ? Math.min(1, baseCenterWidth / canvasWidth, baseCenterHeight / room.boardH)
+  const centerAvailableWidth = sideTrayMode
+    ? Math.max(320, viewport.width - sideTrayWidth * 2 - sideGap * 2 - 32)
+    : Math.max(260, viewport.width - 24);
+  const centerAvailableHeight = sideTrayMode
+    ? Math.max(320, viewport.height - 300)
+    : Math.max(280, viewport.height - 260);
+
+  // Puzzle mümkün olduğunca büyük kalır. Yan alanların kaç parça aldığı
+  // artık puzzle boyutunu belirlemez.
+  const boardScale = sideTrayMode && canvasWidth && room?.boardH
+    ? Math.min(1, centerAvailableWidth / canvasWidth, centerAvailableHeight / room.boardH)
     : 1;
 
-  // 50 ve 100 parçada hedef: yan tepsilere kaydırma olmadan sığdır.
-  // 200+ parçada ise parçaları gereksiz küçültmek yerine tepsiyi kaydırılabilir
-  // bırakıyoruz. Böylece puzzle ortada okunaklı kalıyor.
-  const fitScaleForTrays = (() => {
-    if (!sideTrayMode || !logicalPieceW || !logicalPieceH || roomPieces > 100) return naturalBoardScale;
-    const maxScale = naturalBoardScale;
-    const minScale = 0.28;
-    let best = minScale;
-    for (let s = maxScale; s >= minScale; s -= 0.005) {
-      const pieceW = (logicalPieceW + PAD * 2) * s;
-      const pieceH = (logicalPieceH + PAD * 2) * s;
-      const columns = Math.max(1, Math.min(8, Math.floor((sideTrayWidth - 16 + trayGap) / (pieceW + trayGap))));
-      const rows = Math.ceil(sidePieceCount / columns);
-      const neededH = rows * pieceH + Math.max(0, rows - 1) * trayGap + 12;
-      if (neededH <= trayAvailableHeight) { best = s; break; }
-    }
-    return best;
-  })();
-
-  const boardScale = sideTrayMode ? fitScaleForTrays : 1;
-  const trayScale = boardScale;
+  // Tepsideki canvasın PAD alanı hücreler arasında taşabilir; görünen parça
+  // puzzle tahtasındaki gerçek parça boyutunda kalır.
   const trayPieceWidth = sideTrayMode
-    ? Math.max(24, Math.round((logicalPieceW + PAD * 2) * trayScale))
+    ? Math.max(42, Math.round((logicalPieceW + PAD * 2) * boardScale))
     : 0;
   const trayPieceHeight = sideTrayMode
-    ? Math.max(24, Math.round((logicalPieceH + PAD * 2) * trayScale))
+    ? Math.max(42, Math.round((logicalPieceH + PAD * 2) * boardScale))
     : 0;
-  const trayColumns = sideTrayMode
-    ? Math.max(2, Math.min(8, Math.floor((sideTrayWidth - 16 + trayGap) / Math.max(1, trayPieceWidth + trayGap))))
+  const trayCellWidth = sideTrayMode
+    ? Math.max(48, Math.round(logicalPieceW * boardScale + 8))
     : 1;
+  const trayCellHeight = sideTrayMode
+    ? Math.max(42, Math.round(logicalPieceH * boardScale + 8))
+    : 1;
+  const trayColumns = sideTrayMode
+    ? Math.max(2, Math.min(5, Math.floor((sideTrayWidth - 10) / trayCellWidth)))
+    : 1;
+  const trayAvailableHeight = sideTrayMode
+    ? Math.max(300, viewport.height - 285)
+    : 0;
 
   const startedAtRef = useRef(null);
 
@@ -787,36 +775,38 @@ export default function Game({
     const right = rightTrayRef.current;
     left.innerHTML = "";
     right.innerHTML = "";
+
     const keys = getRandomizedTrayKeys();
     const half = Math.ceil(keys.length / 2);
 
-    const appendPiece = (holder, key) => {
+    keys.forEach((key, index) => {
       const p = piecesRef.current[key];
       const pc = pieceCanvasesRef.current[key];
       if (!p || !pc || p.placed || p.movedAt || selectedPieceKey === key) return;
-      holder.appendChild((() => {
-        const item = document.createElement("div");
-        item.className = "side-tray-piece";
-        item.dataset.pieceKey = key;
-        item.appendChild(pc);
-        pc.style.width = `${trayPieceWidth}px`;
-        pc.style.height = `${trayPieceHeight}px`;
-        pc.style.maxWidth = "100%";
-        pc.style.touchAction = "none";
-        pc.style.userSelect = "none";
-        item.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          handleTrayPointerDown(event, key);
-        });
-        return item;
-      })());
-    };
 
-    keys.forEach((key, index) => appendPiece(index < half ? left : right, key));
-    left.classList.toggle("side-tray-scroll", keys.length > 120);
-    right.classList.toggle("side-tray-scroll", keys.length > 120);
-  }, [sideTrayMode, room, trayVersion, selectedPieceKey, viewport.width, viewport.height]);
+      const holder = document.createElement("div");
+      holder.className = "side-tray-piece";
+      holder.dataset.pieceKey = key;
+      holder.style.width = `${trayCellWidth}px`;
+      holder.style.height = `${trayCellHeight}px`;
+      holder.appendChild(pc);
+
+      pc.style.width = `${trayPieceWidth}px`;
+      pc.style.height = `${trayPieceHeight}px`;
+      pc.style.maxWidth = "none";
+      pc.style.touchAction = "none";
+      pc.style.userSelect = "none";
+      pc.style.pointerEvents = "auto";
+
+      holder.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTrayPointerDown(event, key);
+      });
+
+      (index < half ? left : right).appendChild(holder);
+    });
+  }, [sideTrayMode, room, trayVersion, selectedPieceKey, viewport.width, viewport.height, trayCellWidth, trayCellHeight, trayPieceWidth, trayPieceHeight]);
 
   useEffect(() => {
     if (!room) return;
@@ -1407,34 +1397,119 @@ export default function Game({
   }, [room, players, showPreview, theme]);
   function handleTrayPointerDown(e, key) {
     if (!room || !sideTrayMode) return;
+
     const p = piecesRef.current[key];
-    const canvas = canvasRef.current;
-    if (!p || p.placed || !canvas) return;
-    const pieceW = room.boardW / room.cols;
-    const pieceH = room.boardH / room.rows;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX;
-    const py = (e.clientY - rect.top) * scaleY;
-    p.x = Math.max(0, Math.min(room.boardW - pieceW, px - pieceW / 2));
-    p.y = Math.max(0, Math.min(room.boardH - pieceH, py - pieceH / 2));
-    draggingRef.current = { key, offsetX: pieceW / 2, offsetY: pieceH / 2 };
+    const holder = e.currentTarget;
+    if (!p || p.placed || !holder) return;
+
+    const rect = holder.getBoundingClientRect();
+    const savedParent = holder.parentNode;
+    const savedNext = holder.nextSibling;
+    const savedStyle = holder.getAttribute("style") || "";
+
+    // Başlangıç alanından kopar; parça artık ekranın tamamında serbestçe
+    // parmağı/Mouse'u takip eder. Tahtaya girince normal puzzle koordinatına geçer.
+    holder.style.position = "fixed";
+    holder.style.left = `${Math.round(e.clientX - (e.clientX - rect.left))}px`;
+    holder.style.top = `${Math.round(e.clientY - (e.clientY - rect.top))}px`;
+    holder.style.width = `${rect.width}px`;
+    holder.style.height = `${rect.height}px`;
+    holder.style.zIndex = "1000";
+    holder.style.pointerEvents = "none";
+    holder.style.margin = "0";
+    holder.style.transform = "translateZ(0)";
+    document.body.appendChild(holder);
+
+    draggingRef.current = {
+      key,
+      offsetScreenX: e.clientX - rect.left,
+      offsetScreenY: e.clientY - rect.top,
+      fromTray: true,
+      holder,
+      savedParent,
+      savedNext,
+      savedStyle,
+    };
+
     setSelectedPieceKey(key);
     zCounterRef.current += 1;
     zOrderRef.current[key] = zCounterRef.current;
     dynamicDirtyRef.current = true;
     dirtyRef.current = true;
-    update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), { key, x: Math.round(p.x), y: Math.round(p.y), movedAt: Date.now() }).catch(() => {});
-    const move = (event) => handlePointerMove(event);
-    const up = () => {
+
+    const move = (event) => {
+      event.preventDefault();
+      const d = draggingRef.current;
+      if (!d || d.key !== key) return;
+
+      d.holder.style.left = `${Math.round(event.clientX - d.offsetScreenX)}px`;
+      d.holder.style.top = `${Math.round(event.clientY - d.offsetScreenY)}px`;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const boardRect = canvas.getBoundingClientRect();
+      const inside = event.clientX >= boardRect.left && event.clientX <= boardRect.right &&
+        event.clientY >= boardRect.top && event.clientY <= boardRect.bottom;
+
+      if (inside) {
+        const scaleX = canvas.width / boardRect.width;
+        const scaleY = canvas.height / boardRect.height;
+        const pieceW = room.boardW / room.cols;
+        const pieceH = room.boardH / room.rows;
+        const px = (event.clientX - boardRect.left) * scaleX;
+        const py = (event.clientY - boardRect.top) * scaleY;
+        p.x = Math.max(-PAD, Math.min(room.boardW - pieceW + PAD, px - pieceW / 2));
+        p.y = Math.max(-PAD, Math.min(room.boardH - pieceH + PAD, py - pieceH / 2));
+        dynamicDirtyRef.current = true;
+        dirtyRef.current = true;
+
+        const now = Date.now();
+        if (now - lastFirebaseWriteRef.current >= FIREBASE_MOVE_INTERVAL) {
+          lastFirebaseWriteRef.current = now;
+          update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
+            key, x: Math.round(p.x), y: Math.round(p.y), movedAt: now,
+          }).catch(() => {});
+        }
+      }
+    };
+
+    const up = (event) => {
+      event.preventDefault();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+
+      const d = draggingRef.current;
+      if (!d || d.key !== key) return;
+
+      const canvas = canvasRef.current;
+      const boardRect = canvas?.getBoundingClientRect();
+      const inside = !!boardRect && event.clientX >= boardRect.left && event.clientX <= boardRect.right &&
+        event.clientY >= boardRect.top && event.clientY <= boardRect.bottom;
+
+      if (inside) {
+        d.holder.remove();
+        handlePointerUp();
+      } else {
+        if (d.savedParent) {
+          if (d.savedNext && d.savedNext.parentNode === d.savedParent) d.savedParent.insertBefore(d.holder, d.savedNext);
+          else d.savedParent.appendChild(d.holder);
+        }
+        d.holder.setAttribute("style", d.savedStyle);
+        d.holder.style.width = `${trayCellWidth}px`;
+        d.holder.style.height = `${trayCellHeight}px`;
+        d.holder.style.pointerEvents = "auto";
+        draggingRef.current = null;
+        remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
+        setSelectedPieceKey(null);
+        dynamicDirtyRef.current = true;
+        staticDirtyRef.current = true;
+      }
     };
+
     window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", up, { once: true });
-    window.addEventListener("pointercancel", up, { once: true });
+    window.addEventListener("pointerup", up, { passive: false });
+    window.addEventListener("pointercancel", up, { passive: false });
   }
 
   function handlePointerDown(e) {
@@ -2027,30 +2102,17 @@ export default function Game({
 
   const pieceH = room.boardH / room.rows;
   const trayTop = room.boardH + 50;
-
-  // Dikey moddaki eski alt tepsi düzenini koruyoruz.
-  const trayCols = Math.max(5, Math.min(10, Math.ceil(Math.sqrt(totalPiecesForLayout(room.rows, room.cols) * 1.2))));
+  const trayCols = Math.max(5, Math.min(10, Math.ceil(totalPiecesForLayout(room.rows, room.cols) * 0.12)));
   const trayRows = Math.ceil((room.rows * room.cols) / trayCols);
   const canvasHeight = sideTrayMode
     ? room.boardH
     : trayTop + trayRows * pieceH * 1.22 + pieceH * 2;
 
-  const boardAspect = canvasWidth / Math.max(1, room.boardH);
-  const sideGap = sideTrayMode ? 10 : 0;
-  const availableBoardWidth = sideTrayMode
-    ? Math.max(280, viewport.width - (sideTrayWidth * 2) - (sideGap * 2) - 16)
-    : Math.max(260, viewport.width - 20);
-  const availableBoardHeight = sideTrayMode
-    ? Math.max(300, viewport.height - 255)
-    : Math.max(300, viewport.height - 250);
-
-  // Side tray kullanırken tahta ölçeğini de aynı trayScale'e bağla.
-  // Böylece parça tepside kaç px ise tahtaya gelince de aynı px kalır.
   const canvasCssWidth = sideTrayMode
-    ? Math.max(1, Math.round(canvasWidth * boardScale))
+    ? Math.round(canvasWidth * boardScale)
     : Math.max(260, Math.round(canvasWidth * boardScale));
   const canvasCssHeight = sideTrayMode
-    ? Math.max(1, Math.round(room.boardH * boardScale))
+    ? Math.round(room.boardH * boardScale)
     : Math.max(220, Math.round(canvasHeight * (canvasCssWidth / canvasWidth)));
 
   const total =
@@ -2244,8 +2306,11 @@ export default function Game({
           "--side-tray-width": `${sideTrayWidth}px`,
           "--tray-piece-size": `${trayPieceWidth}px`,
           "--tray-piece-height": `${trayPieceHeight}px`,
+          "--tray-cell-width": `${trayCellWidth}px`,
+          "--tray-cell-height": `${trayCellHeight}px`,
           "--side-tray-height": `${trayAvailableHeight}px`,
           "--board-css-height": `${canvasCssHeight}px`,
+          "--side-gap": `${sideGap}px`,
         } : undefined}
       >
         {sideTrayMode && <div ref={leftTrayRef} className="side-tray side-tray-left" style={{ "--tray-columns": trayColumns }} aria-label="Sol parça alanı" />}
