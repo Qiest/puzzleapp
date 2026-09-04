@@ -22,7 +22,7 @@ const PAD = 30;
 
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
-const FIREBASE_MOVE_INTERVAL = 100;
+const FIREBASE_MOVE_INTERVAL = 50;
 function totalPiecesForLayout(rows, cols) { return rows * cols; }
 
 
@@ -1350,6 +1350,13 @@ export default function Game({
         canvas.setPointerCapture(
           e.pointerId
         );
+
+        // İkinci canvas mimarisinde sürüklenen parça static katmandan
+        // çıkarılmalı; aksi halde bırakınca eski tepsi görüntüsü geri gelir.
+        staticDirtyRef.current = true;
+        dynamicDirtyRef.current = true;
+        dirtyRef.current = true;
+
         lastFirebaseWriteRef.current = Date.now();
         update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
           key,
@@ -1485,21 +1492,13 @@ export default function Game({
 
     if (!p) return;
 
-    // Parçanın sol-üst köşesini değil merkezini hedef hücrenin
-    // merkezine göre değerlendiriyoruz. Böylece kullanıcı parçayı
-    // hücreye yakın bıraktığında gereksiz yere tepsiye dönmüş gibi
-    // görünmez.
-    const centerDx =
-      Math.abs(
-        (p.x + pieceW / 2) -
-        (correctX + pieceW / 2)
-      );
-
-    const centerDy =
-      Math.abs(
-        (p.y + pieceH / 2) -
-        (correctY + pieceH / 2)
-      );
+    // Hücreye yaklaşınca merkez mesafesi üzerinden snap yap.
+    const centerDx = Math.abs(
+      (p.x + pieceW / 2) - (correctX + pieceW / 2)
+    );
+    const centerDy = Math.abs(
+      (p.y + pieceH / 2) - (correctY + pieceH / 2)
+    );
 
     const thresholdX = pieceW * 0.55;
     const thresholdY = pieceH * 0.55;
@@ -1508,8 +1507,8 @@ export default function Game({
 
     if (
       (Number(p.rotation) || 0) === 0 &&
-      centerDx < thresholdX &&
-      centerDy < thresholdY
+      centerDx <= thresholdX &&
+      centerDy <= thresholdY
     ) {
       p.x = correctX;
       p.y = correctY;
@@ -1529,6 +1528,9 @@ export default function Game({
     p.movedAt =
       now;
 
+    // Sürükleme bitti: final konumu static katmana geçir.
+    staticDirtyRef.current = true;
+    dynamicDirtyRef.current = true;
     dirtyRef.current = true;
 
     updateProgress();
