@@ -70,7 +70,6 @@ export default function Game({
     useState(false);
 
   const [selectedPieceKey, setSelectedPieceKey] = useState(null);
-  const activePieceKeyRef = useRef(null);
   const [hintsLeft, setHintsLeft] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
@@ -1138,7 +1137,6 @@ export default function Game({
     p.rotation = ((Number(p.rotation) || 0) + 90) % 360;
     p.movedBy = playerId;
     p.movedAt = Date.now();
-    activePieceKeyRef.current = key;
     setSelectedPieceKey(key);
     dirtyRef.current = true;
     staticDirtyRef.current = true;
@@ -1192,8 +1190,7 @@ export default function Game({
   }
 
   function rotateSelectedPiece() {
-    const key = activePieceKeyRef.current || selectedPieceKey;
-    if (key) rotatePiece(key);
+    rotatePiece(selectedPieceKey);
   }
 
   function handleDoubleClick(e) {
@@ -1202,14 +1199,39 @@ export default function Game({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Çift tıklamadaki koordinatlar pointer down ile birebir aynı dönüşümden
+    // geçmeli. Yan dağılım modunda canvas tüm çalışma alanını temsil ediyor;
+    // bu yüzden yalnızca canvas.width/height'e göre hesap yapmak parçayı
+    // birkaç yüz piksel kaydırıp yanlış parçayı bulabiliyordu.
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX;
-    const py = (e.clientY - rect.top) * scaleY;
-    const key = findPieceAtPoint(px, py);
+    const metrics = sideTrayMode ? getSideLayoutMetrics() : {
+      boardScale: canvas.width / Math.max(1, room.boardW),
+      boardOffsetX: 0,
+      boardOffsetY: 0,
+      workspaceW: canvas.width,
+      workspaceH: canvas.height,
+    };
 
-    if (key) rotatePiece(key);
+    boardTransformRef.current = {
+      scale: metrics.boardScale,
+      offsetX: metrics.boardOffsetX,
+      offsetY: metrics.boardOffsetY,
+      workspaceW: metrics.workspaceW ?? canvas.width,
+      workspaceH: metrics.workspaceH ?? canvas.height,
+    };
+
+    const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const px = (screenX - metrics.boardOffsetX) / metrics.boardScale;
+    const py = (screenY - metrics.boardOffsetY) / metrics.boardScale;
+
+    const key = findPieceAtPoint(px, py);
+    if (key) {
+      setSelectedPieceKey(key);
+      zCounterRef.current += 1;
+      zOrderRef.current[key] = zCounterRef.current;
+      rotatePiece(key);
+    }
   }
 
   useEffect(() => {
@@ -1603,7 +1625,6 @@ export default function Game({
           fromTray: sideTrayMode && !p.movedAt,
         };
 
-        activePieceKeyRef.current = key;
         setSelectedPieceKey(key);
         zCounterRef.current += 1;
         zOrderRef.current[key] = zCounterRef.current;
