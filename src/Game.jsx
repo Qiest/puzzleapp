@@ -34,6 +34,7 @@ export default function Game({
   pendingJoin,
   onLeave,
   theme = "light",
+  onToggleTheme,
 }) {
   const [needsName, setNeedsName] =
     useState(
@@ -2030,6 +2031,12 @@ export default function Game({
           <span className="stat-badge">{room.difficultyName || "Klasik"}</span>
           <span className="stat-badge">{formatTime(elapsed)}</span>
           <span className="stat-badge">Yardım: {hintsLeft ?? 0}</span>
+
+          <button className="theme-toggle-button game-theme-toggle" type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
+            <span className="theme-toggle-icon theme-toggle-moon" aria-hidden="true"></span>
+            <span className="theme-toggle-icon theme-toggle-sun" aria-hidden="true"></span>
+            <i className={theme === "dark" ? "is-dark" : "is-light"}></i>
+          </button>
 
           <button
             className="btn tiny"

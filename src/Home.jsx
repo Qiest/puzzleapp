@@ -728,18 +728,23 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
       await set(ref(db, `users/${user.uid}/puzzlesRemaining`), nextRemaining);
       setPuzzlesRemaining(nextRemaining);
       window.__lastCreatedRoomCode = code;
+      // Odanın açılması, davet yazısına bağlı kalmasın.
+      // Bir arkadaş daveti Rules/bağlantı yüzünden reddedilse bile oda normal şekilde açılır.
       if (selectedInviteFriends.length) {
-        const inviteUpdates = {};
-        selectedInviteFriends.forEach(uid => {
-          inviteUpdates[`roomInvites/${uid}/${code}`] = {
-            roomCode: code,
-            fromUid: user.uid,
-            fromName: profile?.name || name.trim() || playerName || "Oyuncu",
-            at: Date.now(),
-            status: "pending",
-          };
-        });
-        await update(ref(db), inviteUpdates);
+        const inviteData = {
+          roomCode: code,
+          fromUid: user.uid,
+          fromName: profile?.name || name.trim() || playerName || "Oyuncu",
+          at: Date.now(),
+          status: "pending",
+        };
+        await Promise.all(selectedInviteFriends.map(async (uid) => {
+          try {
+            await set(ref(db, `roomInvites/${uid}/${code}`), inviteData);
+          } catch (inviteError) {
+            console.warn("Arkadaş daveti gönderilemedi:", uid, inviteError);
+          }
+        }));
       }
       onEnterRoom(code, name.trim() || playerName || "Oyuncu");
     } catch (e) {
@@ -775,6 +780,11 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
             <span className="top-user-name">{profile?.name || playerName || "Oyuncu"}</span>
             <button className="icon-profile-button" title="Profil" onClick={() => { setError(""); setProfileOpen(true); }}>
               {profileAvatar ? <img src={profileAvatar} alt="" /> : <span>{(playerName || "O").slice(0,1).toUpperCase()}</span>}
+            </button>
+            <button className="theme-toggle-button" type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
+              <span className="theme-toggle-icon theme-toggle-moon" aria-hidden="true"></span>
+              <span className="theme-toggle-icon theme-toggle-sun" aria-hidden="true"></span>
+              <i className={theme === "dark" ? "is-dark" : "is-light"}></i>
             </button>
             <button className="icon-notification-button" title="Bildirimler" onClick={() => {
                 setNotificationsOpen(v => {
