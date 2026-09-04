@@ -86,6 +86,12 @@ export default function Game({
   const [chatText, setChatText] = useState("");
   const [chatUnread, setChatUnread] = useState(false);
 
+  // Responsive tepsi modu render/effect'lerden önce hesaplanmalı;
+  // aksi halde useEffect dependency array'inde TDZ (before initialization) oluşur.
+  const isLandscape = viewport.width > viewport.height;
+  const sideTrayMode = isLandscape && viewport.width >= 600;
+  const trayPieceWidth = Math.max(64, Math.min(96, Math.round((room?.boardW || 720) / Math.max(6, room?.cols || 10))));
+
   const startedAtRef = useRef(null);
 
   const canvasRef =
@@ -950,10 +956,6 @@ export default function Game({
     }, 1000);
     return () => clearInterval(timer);
   }, [room, finished]);
-
-  const isLandscape = viewport.width > viewport.height;
-  const sideTrayMode = isLandscape && viewport.width >= 600;
-  const trayPieceWidth = Math.max(64, Math.min(96, Math.round((room?.boardW || 720) / Math.max(6, room?.cols || 10))));
 
   function getRandomizedTrayKeys() {
     const keys = Object.keys(piecesRef.current).filter((k) => k !== "__ghost");
