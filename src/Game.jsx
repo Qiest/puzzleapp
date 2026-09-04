@@ -1124,7 +1124,19 @@ export default function Game({
     const p = piecesRef.current[key];
     if (!p || p.placed) return;
 
+    // Yan alandaki bir parçayı döndürürken görünür konumunu önce kalıcı
+    // koordinatına aktar. Böylece döndürme sonrası eski rastgele başlangıç
+    // koordinatına sıçramaz; parça elinin altında kaldığı yerde döner.
+    const displayPos = getPieceDisplayPosition(key, p);
+    if (sideTrayMode && !p.movedAt && displayPos) {
+      p.x = Number(displayPos.x) || p.x;
+      p.y = Number(displayPos.y) || p.y;
+      delete trayPositionsRef.current[key];
+    }
+
     p.rotation = ((Number(p.rotation) || 0) + 90) % 360;
+    p.movedBy = playerId;
+    p.movedAt = Date.now();
     setSelectedPieceKey(key);
     dirtyRef.current = true;
     staticDirtyRef.current = true;
@@ -1132,7 +1144,13 @@ export default function Game({
 
     update(
       ref(db, `rooms/${roomCode}/pieces/${key}`),
-      { rotation: p.rotation, movedBy: playerId, movedAt: Date.now() }
+      {
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        rotation: p.rotation,
+        movedBy: playerId,
+        movedAt: p.movedAt,
+      }
     ).catch(() => {});
   }
 

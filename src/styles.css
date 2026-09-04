@@ -167,6 +167,57 @@ html[data-theme="dark"] .social-result span,html[data-theme="dark"] .friend-row 
 html[data-theme="dark"] .notification-modal,html[data-theme="dark"] .notification-card{background:#151619;color:#f4f5f8;border-color:#30333b}
 html[data-theme="dark"] .notification-copy span,html[data-theme="dark"] .friend-main span,html[data-theme="dark"] .social-empty{color:#9fa5b2}
 
+/* Dark mode: white child surfaces must not remain white inside the profile/social drawer. */
+html[data-theme="dark"] .profile-stat-card,
+html[data-theme="dark"] .social-result,
+html[data-theme="dark"] .friend-row,
+html[data-theme="dark"] .friend-action,
+html[data-theme="dark"] .friend-invite-chip,
+html[data-theme="dark"] .mini-action,
+html[data-theme="dark"] .social-empty,
+html[data-theme="dark"] .drawer-badge,
+html[data-theme="dark"] .chat-bubble,
+html[data-theme="dark"] .chat-compose input,
+html[data-theme="dark"] .room-chat-launcher,
+html[data-theme="dark"] .room-chat-panel,
+html[data-theme="dark"] .room-chat-bubble,
+html[data-theme="dark"] .room-chat-compose,
+html[data-theme="dark"] .room-chat-compose input,
+html[data-theme="dark"] .settings-tabs,
+html[data-theme="dark"] .settings-tabs button.active,
+html[data-theme="dark"] .settings-option,
+html[data-theme="dark"] .notification-card,
+html[data-theme="dark"] .history-card{
+  background:#1b1d21;
+  color:#f4f5f8;
+  border-color:#30333b;
+}
+html[data-theme="dark"] .drawer-badge.locked{background:#202228;color:#9fa5b2}
+html[data-theme="dark"] .drawer-badge.locked i{background:#30333b;color:#9fa5b2}
+html[data-theme="dark"] .social-result span,
+html[data-theme="dark"] .friend-row span,
+html[data-theme="dark"] .friend-action small,
+html[data-theme="dark"] .profile-stat-card span,
+html[data-theme="dark"] .settings-option span,
+html[data-theme="dark"] .chat-bubble small,
+html[data-theme="dark"] .room-chat-bubble small{color:#9fa5b2}
+html[data-theme="dark"] .social-result strong,
+html[data-theme="dark"] .friend-row strong,
+html[data-theme="dark"] .friend-action,
+html[data-theme="dark"] .profile-stat-card b,
+html[data-theme="dark"] .settings-option strong,
+html[data-theme="dark"] .room-chat-bubble span{color:#f4f5f8}
+html[data-theme="dark"] .mini-action{color:#e7e9ef}
+html[data-theme="dark"] .social-search input,
+html[data-theme="dark"] .chat-compose input,
+html[data-theme="dark"] .room-chat-compose input{background:#101114;color:#f4f5f8;border-color:#343741}
+html[data-theme="dark"] .social-search input::placeholder,
+html[data-theme="dark"] .chat-compose input::placeholder,
+html[data-theme="dark"] .room-chat-compose input::placeholder{color:#707786}
+html[data-theme="dark"] .room-chat-panel{background:#151619}
+html[data-theme="dark"] .room-chat-compose{border-top-color:#30333b}
+html[data-theme="dark"] .room-chat-launcher{color:#f4f5f8}
+
 /* Completed puzzle history */
 .history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .history-card{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:#fafbfe}
