@@ -940,7 +940,7 @@ export default function Game({
 
     const aspect = room.boardH > 0 ? room.boardW / room.boardH : 1.5;
     const workspaceW = Math.max(320, Math.round(viewport.width));
-    const workspaceH = Math.max(420, Math.round(viewport.height - 250));
+    const workspaceH = Math.max(420, Math.round(viewport.height - 218));
     const sideGap = Math.max(10, Math.min(16, Math.round(workspaceW * 0.009)));
 
     // Ortadaki puzzle masanın ana objesi; yan alanlara da 4 sütunluk gerçek
@@ -996,6 +996,7 @@ export default function Game({
 
   function rebuildSideTrayPositions() {
     if (!room || !sideTrayMode) return;
+
     const metrics = getSideLayoutMetrics();
     const keys = getRandomizedTrayKeys().filter((key) => {
       const p = piecesRef.current[key];
@@ -1003,42 +1004,105 @@ export default function Game({
     });
 
     const half = Math.ceil(keys.length / 2);
-    const columns = 4;
     const pieceW = metrics.pieceCssW;
     const pieceH = metrics.pieceCssH;
+    const sidePadding = 6;
+
+    // Yan alanlar yalnızca parçaların ilk bulunduğu masa alanıdır.
+    // 4 sütun temel alınır; büyük ekranlarda alan elverirse 5-7 sütuna çıkılır.
+    // Satır/sütunlara büyük jitter verildiği için askeri düzen gibi görünmez.
+    const columns = Math.max(
+      4,
+      Math.min(
+        7,
+        Math.floor(
+          (metrics.sideWidth - sidePadding * 2) /
+          Math.max(44, pieceW * 0.9)
+        )
+      )
+    );
+
     const rows = Math.max(1, Math.ceil(half / columns));
-    const horizontalGap = 5;
-    const verticalGap = 5;
-    const stepX = pieceW + horizontalGap;
-    const stepY = Math.min(pieceH + verticalGap, Math.max(18, (metrics.workspaceH - 16) / rows));
+    const colStep = Math.max(
+      pieceW * 0.78,
+      (metrics.sideWidth - sidePadding * 2) / columns
+    );
+
+    const usableH = Math.max(pieceH, metrics.workspaceH - 10);
+
+    // 50/100'de mümkün olduğunca rahat; 200'de gerektiğinde kontrollü
+    // hafif üst üste gelmeye izin ver.
+    const rowStep = rows <= 10
+      ? Math.min(pieceH * 0.9, usableH / rows)
+      : Math.min(pieceH * 0.74, usableH / rows);
 
     const next = {};
+
     keys.forEach((key, index) => {
-      const sideIndex = index < half ? index : index - half;
+      const isLeft = index < half;
+      const sideIndex = isLeft ? index : index - half;
       const col = sideIndex % columns;
       const row = Math.floor(sideIndex / columns);
-      const isLeft = index < half;
-      const sideStartX = isLeft
-        ? 10
-        : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap + 10;
-      const maxSideX = isLeft
-        ? Math.max(10, metrics.sideWidth - pieceW - 6)
-        : metrics.workspaceW - pieceW - 10;
-      const rawScreenX = sideStartX + col * stepX;
-      const screenX = Math.max(isLeft ? 4 : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap + 4, Math.min(maxSideX, rawScreenX));
 
-      const seed = hashSeed(room.seed, `${key}:${isLeft ? "L" : "R"}`);
-      const jitterX = ((seed % 1000) / 1000 - 0.5) * Math.min(4, horizontalGap * 0.7);
-      const jitterY = (((seed >>> 10) % 1000) / 1000 - 0.5) * Math.min(4, verticalGap * 0.7);
-      const finalScreenX = Math.max(0, Math.min(metrics.workspaceW - (pieceW + 2 * 0), screenX + jitterX));
-      const finalScreenY = Math.max(4, Math.min(metrics.workspaceH - pieceH, row * stepY + 8 + jitterY));
+      const seed = hashSeed(
+        room.seed,
+        `${key}:${isLeft ? "L" : "R"}:spread:v8`
+      );
 
-      // p.x/p.y board-koordinatları olarak kalıyor; sadece ilk yerleşim ekran
-      // koordinatından türetiliyor. Kullanıcı taşıdığı anda kalıcı konuma dönüşüyor.
-      next[key] = {
-        x: (finalScreenX - metrics.boardOffsetX) / metrics.boardScale + PAD,
-        y: (finalScreenY - metrics.boardOffsetY) / metrics.boardScale + PAD,
+      const unit = (shift) => {
+        let n = (seed + shift * 2654435761) >>> 0;
+        n ^= n >>> 16;
+        n = Math.imul(n, 2246822519) >>> 0;
+        n ^= n >>> 13;
+        return (n >>> 0) / 4294967295;
       };
+
+      const sideStartX = isLeft
+        ? metrics.boardOffsetX - metrics.sideGap - metrics.sideWidth
+        : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap;
+
+      const baseX =
+        sideStartX +
+        sidePadding +
+        col * colStep +
+        Math.max(0, (colStep - pieceW) / 2);
+
+      const baseY = 2 + row * rowStep;
+
+      // Sağ/sol tarafta insan eliyle saçılmış gibi görünmesi için
+      // hücre sınırlarını ciddi ölçüde kırıyoruz.
+      const jitterX =
+        (unit(3) - 0.5) *
+        Math.min(colStep * 0.65, pieceW * 0.52);
+
+      const jitterY =
+        (unit(7) - 0.5) *
+        Math.min(rowStep * 0.68, pieceH * 0.46);
+
+      const x = Math.max(
+        sideStartX + 2,
+        Math.min(
+          sideStartX + metrics.sideWidth - pieceW - 2,
+          baseX + jitterX
+        )
+      );
+
+      const y = Math.max(
+        0,
+        Math.min(metrics.workspaceH - pieceH, baseY + jitterY)
+      );
+
+      // Kalıcı Firebase koordinatları değişmiyor. Bu yalnızca ilk
+      // ekran yerleşimini temsil eden geçici ekran koordinatıdır.
+      next[key] = {
+        x: (x - metrics.boardOffsetX) / metrics.boardScale + PAD,
+        y: (y - metrics.boardOffsetY) / metrics.boardScale + PAD,
+      };
+
+      // Hafif kesişmelerde üstte kalacak parça da rastgele olsun.
+      if (!zOrderRef.current[key]) {
+        zOrderRef.current[key] = 1 + Math.floor(unit(13) * 1000);
+      }
     });
 
     trayPositionsRef.current = next;
@@ -1057,6 +1121,16 @@ export default function Game({
     staticDirtyRef.current = true;
     dynamicDirtyRef.current = true;
     dirtyRef.current = true;
+
+    // İlk layout/paint yarışına karşı tek seferlik yerleşim tekrarı.
+    const settleTimer = window.setTimeout(() => {
+      rebuildSideTrayPositions();
+      staticDirtyRef.current = true;
+      dynamicDirtyRef.current = true;
+      dirtyRef.current = true;
+    }, 60);
+
+    return () => window.clearTimeout(settleTimer);
   }, [room, sideTrayMode, viewport.width, viewport.height]);
 
   function formatTime(totalSeconds) {

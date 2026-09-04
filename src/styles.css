@@ -774,7 +774,7 @@ html[data-theme="dark"] .side-tray-layout .side-tray-piece canvas {
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     min-height: var(--workspace-height, 500px) !important;
   }
 
@@ -784,7 +784,7 @@ html[data-theme="dark"] .side-tray-layout .side-tray-piece canvas {
     max-width: none !important;
     margin: 0 !important;
     padding: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
 
   .side-tray-layout canvas {
@@ -803,7 +803,7 @@ html[data-theme="dark"] .side-tray-layout .side-tray-piece canvas {
 
 /* V7 final: side-tray elements no longer exist; the canvas is the entire table. */
 @media (min-width: 600px) and (orientation: landscape) {
-  .side-tray-layout { position: relative !important; width: 100% !important; overflow: hidden !important; }
-  .side-tray-layout .canvas-wrap { position: relative !important; overflow: hidden !important; }
+  .side-tray-layout { position: relative !important; width: 100% !important; overflow: visible !important; }
+  .side-tray-layout .canvas-wrap { position: relative !important; overflow: visible !important; }
   .side-tray-layout .canvas-wrap canvas { position: absolute !important; inset: 0 !important; }
 }
