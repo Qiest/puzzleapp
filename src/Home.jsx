@@ -715,7 +715,9 @@ export default function Home({ onEnterRoom, user, playerName }) {
         image: dataUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,
-        createdAt: Date.now(), pieces, players: {},
+        createdAt: Date.now(), pieces, players: {
+          [user.uid]: { name: name.trim() || playerName || "Oyuncu", joinedAt: Date.now() }
+        },
       });
       const nextRemaining = Math.max(0, (Number(puzzlesRemaining) || 3) - 1);
       await set(ref(db, `users/${user.uid}/puzzlesRemaining`), nextRemaining);
@@ -748,6 +750,19 @@ export default function Home({ onEnterRoom, user, playerName }) {
     try {
       const snap = await get(ref(db, `rooms/${code}`));
       if (!snap.exists()) return setError("Böyle bir oda bulunamadı.");
+      const room = snap.val() || {};
+      const currentPlayers = room.players || {};
+      const playerUid = user?.uid;
+      if (!playerUid) return setError("Oyuncu hesabı hazır değil.");
+      if (Object.keys(currentPlayers).length >= 4 && !currentPlayers[playerUid]) {
+        return setError("Bu oda dolu.");
+      }
+      await update(ref(db, `rooms/${code}`), {
+        [`players/${playerUid}`]: {
+          name: name.trim() || playerName || "Oyuncu",
+          joinedAt: Date.now()
+        }
+      });
       onEnterRoom(code, name.trim() || playerName || "Oyuncu", true);
     } catch (e) { console.error(e); setError(e?.message || "Odaya bağlanılamadı."); }
     finally { setBusy(false); }
