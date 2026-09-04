@@ -92,6 +92,7 @@ export default function Game({
 
   // Yan tepsilerdeki parça ile tahtadaki parça aynı CSS ölçeğinde kalır.
   // Böylece tepsiden tahtaya alınca parça büyümüş gibi görünmez.
+  const canvasWidth = room?.boardW || 0;
   const roomRows = Math.max(1, Number(room?.rows) || 1);
   const roomCols = Math.max(1, Number(room?.cols) || 1);
   const roomPieces = roomRows * roomCols;
@@ -2024,7 +2025,6 @@ export default function Game({
     );
   }
 
-  const canvasWidth = room.boardW;
   const pieceH = room.boardH / room.rows;
   const trayTop = room.boardH + 50;
 
