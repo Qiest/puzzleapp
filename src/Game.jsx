@@ -22,7 +22,7 @@ const PAD = 30;
 
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
-const FIREBASE_MOVE_INTERVAL = 100;
+const FIREBASE_MOVE_INTERVAL = 180;
 function totalPiecesForLayout(rows, cols) { return rows * cols; }
 
 
@@ -940,7 +940,7 @@ export default function Game({
 
     const aspect = room.boardH > 0 ? room.boardW / room.boardH : 1.5;
     const workspaceW = Math.max(320, Math.round(viewport.width));
-    const workspaceH = Math.max(420, Math.round(viewport.height - 218));
+    const workspaceH = Math.max(420, Math.round(viewport.height - 250));
     const sideGap = Math.max(10, Math.min(16, Math.round(workspaceW * 0.009)));
 
     // Ortadaki puzzle masanın ana objesi; yan alanlara da 4 sütunluk gerçek
@@ -996,114 +996,104 @@ export default function Game({
 
   function rebuildSideTrayPositions() {
     if (!room || !sideTrayMode) return;
-
     const metrics = getSideLayoutMetrics();
     const keys = getRandomizedTrayKeys().filter((key) => {
       const p = piecesRef.current[key];
       return p && !p.placed && !p.movedAt;
     });
 
-    const half = Math.ceil(keys.length / 2);
-    const pieceW = metrics.pieceCssW;
-    const pieceH = metrics.pieceCssH;
-    const sidePadding = 6;
+    const total = keys.length;
+    if (!total) {
+      trayPositionsRef.current = {};
+      boardTransformRef.current = {
+        scale: metrics.boardScale,
+        offsetX: metrics.boardOffsetX,
+        offsetY: metrics.boardOffsetY,
+        workspaceW: metrics.workspaceW,
+        workspaceH: metrics.workspaceH,
+      };
+      return;
+    }
 
-    // Yan alanlar yalnızca parçaların ilk bulunduğu masa alanıdır.
-    // 4 sütun temel alınır; büyük ekranlarda alan elverirse 5-7 sütuna çıkılır.
-    // Satır/sütunlara büyük jitter verildiği için askeri düzen gibi görünmez.
-    const columns = Math.max(
-      4,
-      Math.min(
-        7,
-        Math.floor(
-          (metrics.sideWidth - sidePadding * 2) /
-          Math.max(44, pieceW * 0.9)
-        )
-      )
-    );
-
-    const rows = Math.max(1, Math.ceil(half / columns));
-    const colStep = Math.max(
-      pieceW * 0.78,
-      (metrics.sideWidth - sidePadding * 2) / columns
-    );
-
-    const usableH = Math.max(pieceH, metrics.workspaceH - 10);
-
-    // 50/100'de mümkün olduğunca rahat; 200'de gerektiğinde kontrollü
-    // hafif üst üste gelmeye izin ver.
-    const rowStep = rows <= 10
-      ? Math.min(pieceH * 0.9, usableH / rows)
-      : Math.min(pieceH * 0.74, usableH / rows);
-
+    // Bunlar gerçek bir "tepsi" değil; masanın sağ ve solunda parçaların
+    // ilk bırakıldığı masa alanları. Grid kullanmıyoruz: her parça alan içinde
+    // ayrı bir rastgele noktaya serpiştiriliyor. Böylece 50 parça bile insan
+    // eliyle masaya bırakılmış gibi görünür.
+    const leftKeys = keys.slice(0, Math.ceil(total / 2));
+    const rightKeys = keys.slice(Math.ceil(total / 2));
     const next = {};
 
-    keys.forEach((key, index) => {
-      const isLeft = index < half;
-      const sideIndex = isLeft ? index : index - half;
-      const col = sideIndex % columns;
-      const row = Math.floor(sideIndex / columns);
+    const pieceW = metrics.pieceCssW;
+    const pieceH = metrics.pieceCssH;
+    const sidePad = Math.max(4, Math.min(18, metrics.sideGap * 0.65));
+    const leftWidth = Math.max(pieceW + 8, metrics.sideWidth - sidePad * 2);
+    const rightWidth = leftWidth;
+    const top = sidePad;
+    const bottom = Math.max(top + pieceH, metrics.workspaceH - sidePad - pieceH);
+    const height = Math.max(pieceH, bottom - top);
 
-      const seed = hashSeed(
-        room.seed,
-        `${key}:${isLeft ? "L" : "R"}:spread:v8`
-      );
+    const placeSide = (sideKeys, isLeft) => {
+      if (!sideKeys.length) return;
+      const occupied = [];
+      const sideWidth = isLeft ? leftWidth : rightWidth;
 
-      const unit = (shift) => {
-        let n = (seed + shift * 2654435761) >>> 0;
-        n ^= n >>> 16;
-        n = Math.imul(n, 2246822519) >>> 0;
-        n ^= n >>> 13;
-        return (n >>> 0) / 4294967295;
-      };
+      sideKeys.forEach((key, index) => {
+        const seed = hashSeed(room.seed, `${key}:${isLeft ? "L" : "R"}:organic:v9`);
+        const rand = (salt = 0) => {
+          let x = (seed + Math.imul((index + 1) * 374761393, 668265263) + salt * 1013904223) >>> 0;
+          x ^= x >>> 13;
+          x = Math.imul(x, 1274126177);
+          x ^= x >>> 16;
+          return (x >>> 0) / 4294967296;
+        };
 
-      const sideStartX = isLeft
-        ? metrics.boardOffsetX - metrics.sideGap - metrics.sideWidth
-        : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap;
+        // İlk tahmin tamamen serbest. Kabul edilen noktalar çok yakınsa yeni
+        // bir nokta deneriz; yoğunluk artınca hafif üst üste binmeye izin veririz.
+        let candidateX = rand(11) * Math.max(0, sideWidth - pieceW);
+        let candidateY = top + rand(23) * Math.max(0, height - pieceH);
 
-      const baseX =
-        sideStartX +
-        sidePadding +
-        col * colStep +
-        Math.max(0, (colStep - pieceW) / 2);
+        const minDx = pieceW * 0.68;
+        const minDy = pieceH * 0.68;
+        let placedWithoutConflict = false;
 
-      const baseY = 2 + row * rowStep;
+        for (let attempt = 0; attempt < 70; attempt++) {
+          const conflict = occupied.some((o) =>
+            Math.abs(o.x - candidateX) < minDx &&
+            Math.abs(o.y - candidateY) < minDy
+          );
+          if (!conflict) {
+            placedWithoutConflict = true;
+            break;
+          }
+          candidateX = rand(31 + attempt * 2) * Math.max(0, sideWidth - pieceW);
+          candidateY = top + rand(47 + attempt * 2) * Math.max(0, height - pieceH);
+        }
 
-      // Sağ/sol tarafta insan eliyle saçılmış gibi görünmesi için
-      // hücre sınırlarını ciddi ölçüde kırıyoruz.
-      const jitterX =
-        (unit(3) - 0.5) *
-        Math.min(colStep * 0.65, pieceW * 0.52);
+        // Alan çok dolduğunda zaten gerçek masadaki gibi hafif temas/örtüşme
+        // kabul ediyoruz; fakat hiçbir parça masa dışına çıkamıyor.
+        if (!placedWithoutConflict) {
+          const spread = Math.max(0, Math.min(1, (index + 1) / Math.max(1, sideKeys.length)));
+          candidateX = ((candidateX + spread * pieceW * 0.37) % Math.max(1, sideWidth - pieceW));
+          candidateY = top + ((candidateY - top + spread * pieceH * 0.53) % Math.max(1, height - pieceH));
+        }
 
-      const jitterY =
-        (unit(7) - 0.5) *
-        Math.min(rowStep * 0.68, pieceH * 0.46);
+        candidateX = Math.max(0, Math.min(Math.max(0, sideWidth - pieceW), candidateX));
+        candidateY = Math.max(top, Math.min(Math.max(top, bottom), candidateY));
+        occupied.push({ x: candidateX, y: candidateY });
 
-      const x = Math.max(
-        sideStartX + 2,
-        Math.min(
-          sideStartX + metrics.sideWidth - pieceW - 2,
-          baseX + jitterX
-        )
-      );
+        const screenX = isLeft
+          ? sidePad + candidateX
+          : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap + sidePad + candidateX;
 
-      const y = Math.max(
-        0,
-        Math.min(metrics.workspaceH - pieceH, baseY + jitterY)
-      );
+        next[key] = {
+          x: (screenX - metrics.boardOffsetX) / metrics.boardScale,
+          y: (candidateY - metrics.boardOffsetY) / metrics.boardScale,
+        };
+      });
+    };
 
-      // Kalıcı Firebase koordinatları değişmiyor. Bu yalnızca ilk
-      // ekran yerleşimini temsil eden geçici ekran koordinatıdır.
-      next[key] = {
-        x: (x - metrics.boardOffsetX) / metrics.boardScale + PAD,
-        y: (y - metrics.boardOffsetY) / metrics.boardScale + PAD,
-      };
-
-      // Hafif kesişmelerde üstte kalacak parça da rastgele olsun.
-      if (!zOrderRef.current[key]) {
-        zOrderRef.current[key] = 1 + Math.floor(unit(13) * 1000);
-      }
-    });
+    placeSide(leftKeys, true);
+    placeSide(rightKeys, false);
 
     trayPositionsRef.current = next;
     boardTransformRef.current = {
@@ -1121,16 +1111,6 @@ export default function Game({
     staticDirtyRef.current = true;
     dynamicDirtyRef.current = true;
     dirtyRef.current = true;
-
-    // İlk layout/paint yarışına karşı tek seferlik yerleşim tekrarı.
-    const settleTimer = window.setTimeout(() => {
-      rebuildSideTrayPositions();
-      staticDirtyRef.current = true;
-      dynamicDirtyRef.current = true;
-      dirtyRef.current = true;
-    }, 60);
-
-    return () => window.clearTimeout(settleTimer);
   }, [room, sideTrayMode, viewport.width, viewport.height]);
 
   function formatTime(totalSeconds) {
@@ -1299,6 +1279,13 @@ export default function Game({
       if (!ctx) return;
 
       const { boardW, boardH, rows, cols } = room;
+      if (sideTrayMode) {
+        const unplacedCount = Object.values(piecesRef.current).filter((p) => p && !p.placed && !p.movedAt).length;
+        const positionedCount = Object.keys(trayPositionsRef.current).length;
+        if (initializedRef.current && unplacedCount > 0 && positionedCount < unplacedCount) {
+          rebuildSideTrayPositions();
+        }
+      }
       const isDark =
         document.documentElement.dataset.theme === "dark" ||
         theme === "dark";
@@ -1585,6 +1572,9 @@ export default function Game({
       ) {
         p.x = displayPos.x;
         p.y = displayPos.y;
+        if (sideTrayMode && !p.movedAt) {
+          delete trayPositionsRef.current[key];
+        }
         draggingRef.current = {
           key,
           offsetX: px - p.x,
@@ -1596,13 +1586,10 @@ export default function Game({
         zCounterRef.current += 1;
         zOrderRef.current[key] = zCounterRef.current;
         canvas.setPointerCapture?.(e.pointerId);
+        // Parmağın/mouse'un ilk dokunuşunda Firebase'e yazmıyoruz.
+        // İlk hareket handlePointerMove'da gönderilecek; böylece parçaya
+        // basılan anda gereksiz ağ turu yüzünden oluşan takılma azalıyor.
         lastFirebaseWriteRef.current = Date.now();
-        update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
-          key,
-          x: Math.round(p.x),
-          y: Math.round(p.y),
-          movedAt: Date.now(),
-        }).catch(() => {});
         break;
       }
     }
@@ -1639,10 +1626,10 @@ export default function Game({
     const pieceH = room.boardH / room.rows;
 
     if (sideTrayMode) {
-      const minX = (-metrics.boardOffsetX) / metrics.boardScale + PAD;
-      const minY = (-metrics.boardOffsetY) / metrics.boardScale + PAD;
-      const maxX = (metrics.workspaceW - metrics.boardOffsetX) / metrics.boardScale - pieceW - PAD;
-      const maxY = (metrics.workspaceH - metrics.boardOffsetY) / metrics.boardScale - pieceH - PAD;
+      const minX = (-metrics.boardOffsetX) / metrics.boardScale;
+      const minY = (-metrics.boardOffsetY) / metrics.boardScale;
+      const maxX = Math.max(minX, (metrics.workspaceW - metrics.boardOffsetX) / metrics.boardScale - pieceW);
+      const maxY = Math.max(minY, (metrics.workspaceH - metrics.boardOffsetY) / metrics.boardScale - pieceH);
       p.x = Math.max(minX, Math.min(maxX, px - d.offsetX));
       p.y = Math.max(minY, Math.min(maxY, py - d.offsetY));
     } else {
