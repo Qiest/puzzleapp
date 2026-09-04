@@ -74,7 +74,6 @@ export default function Game({
   const [elapsed, setElapsed] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
-  const [trayVersion, setTrayVersion] = useState(0);
   const [showCheatConfirm, setShowCheatConfirm] = useState(false);
   const [reward, setReward] = useState(null);
   const [reaction, setReaction] = useState("");
@@ -89,7 +88,6 @@ export default function Game({
   // aksi halde useEffect dependency array'inde TDZ (before initialization) oluşur.
   const isLandscape = viewport.width > viewport.height;
   const sideTrayMode = isLandscape && viewport.width >= 600;
-  const trayPieceWidth = Math.max(64, Math.min(96, Math.round((room?.boardW || 720) / Math.max(6, room?.cols || 10))));
 
   const startedAtRef = useRef(null);
 
@@ -99,8 +97,8 @@ export default function Game({
   // Static katman: hareket etmeyen parçalar ve tahta/tepsi arka planı.
   // Dynamic katman: yalnızca o anda hareket eden parçalar + highlight.
   const staticCanvasRef = useRef(null);
-  const leftTrayRef = useRef(null);
-  const rightTrayRef = useRef(null);
+  const boardTransformRef = useRef({ scale: 1, offsetX: 0, offsetY: 0, workspaceW: 0, workspaceH: 0 });
+  const trayPositionsRef = useRef({});
 
   const piecesRef =
     useRef({});
@@ -696,75 +694,11 @@ export default function Game({
       dirtyRef.current = true;
       staticDirtyRef.current = true;
       dynamicDirtyRef.current = true;
-      setTrayVersion(v => v + 1);
     };
 
     img.src = image;
   }, [room]);
 
-  useEffect(() => {
-    if (!sideTrayMode || !room || !leftTrayRef.current || !rightTrayRef.current) return;
-
-    const left = leftTrayRef.current;
-    const right = rightTrayRef.current;
-    left.innerHTML = "";
-    right.innerHTML = "";
-
-    const keys = getRandomizedTrayKeys();
-    const half = Math.ceil(keys.length / 2);
-    const layout = getSideLayoutMetrics();
-    const columns = layout.trayColumns;
-    const pieceCssW = layout.pieceCssW;
-    const pieceCssH = layout.pieceCssH;
-    const cellGapX = 6;
-    const cellGapY = 5;
-
-    keys.forEach((key, index) => {
-      const p = piecesRef.current[key];
-      const pc = pieceCanvasesRef.current[key];
-      if (!p || !pc || p.placed || p.movedAt || selectedPieceKey === key) return;
-
-      const targetTray = index < half ? left : right;
-      const localIndex = index < half ? index : index - half;
-      const col = localIndex % columns;
-      const row = Math.floor(localIndex / columns);
-
-      // Sıkı bir yerleşim kullanıyoruz ama hücre içinde birkaç px rastgelelik
-      // bırakıyoruz; böylece parçalar doğal görünüyor ve birbirinin üstüne binmiyor.
-      const jitterSeed = hashSeed(room.seed, key + (index < half ? "L" : "R"));
-      const jitterX = ((jitterSeed % 1000) / 1000 - 0.5) * Math.min(4, cellGapX * 0.65);
-      const jitterY = ((((jitterSeed >>> 10) % 1000) / 1000) - 0.5) * Math.min(4, cellGapY * 0.65);
-
-      const contentWidth = columns * pieceCssW + (columns - 1) * cellGapX;
-      const startX = Math.max(0, (layout.sideWidth - contentWidth) / 2);
-      const rawX = startX + col * (pieceCssW + cellGapX) + jitterX;
-      const rawY = row * (pieceCssH + cellGapY) + jitterY + 2;
-      const x = Math.max(0, Math.min(layout.sideWidth - pieceCssW, rawX));
-      const y = Math.max(0, Math.min(layout.boardCssHeight - pieceCssH, rawY));
-
-      const holder = document.createElement("div");
-      holder.className = "side-tray-piece";
-      holder.dataset.pieceKey = key;
-      holder.style.width = `${pieceCssW}px`;
-      holder.style.height = `${pieceCssH}px`;
-      holder.style.left = `${x}px`;
-      holder.style.top = `${y}px`;
-      holder.appendChild(pc);
-
-      pc.style.width = `${pieceCssW}px`;
-      pc.style.height = `${pieceCssH}px`;
-      pc.style.maxWidth = "none";
-      pc.style.touchAction = "none";
-      pc.style.userSelect = "none";
-
-      holder.addEventListener("pointerdown", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        handleTrayPointerDown(event, key);
-      });
-      targetTray.appendChild(holder);
-    });
-  }, [sideTrayMode, room, trayVersion, selectedPieceKey, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!room) return;
@@ -851,7 +785,6 @@ export default function Game({
       dirtyRef.current = true;
       staticDirtyRef.current = true;
       dynamicDirtyRef.current = true;
-      setTrayVersion(v => v + 1);
       updateProgress();
     };
 
@@ -989,55 +922,142 @@ export default function Game({
   function getSideLayoutMetrics() {
     if (!room) {
       return {
-        sideWidth: 0,
+        workspaceW: 0,
+        workspaceH: 0,
         boardCssWidth: 0,
         boardCssHeight: 0,
         boardScale: 1,
+        boardOffsetX: 0,
+        boardOffsetY: 0,
+        sideWidth: 0,
         pieceCssW: 0,
         pieceCssH: 0,
         trayColumns: 4,
         trayScroll: false,
-        sideGap: 12,
+        sideGap: 14,
       };
     }
 
     const aspect = room.boardH > 0 ? room.boardW / room.boardH : 1.5;
-    const total = room.rows * room.cols;
-    const half = Math.ceil(total / 2);
-    const verticalReserve = Math.max(225, Math.min(285, Math.round(viewport.height * 0.28)));
-    const usableHeight = Math.max(400, viewport.height - verticalReserve);
-    const sideGap = Math.max(10, Math.min(18, Math.round(viewport.width * 0.01)));
+    const workspaceW = Math.max(320, Math.round(viewport.width));
+    const workspaceH = Math.max(420, Math.round(viewport.height - 250));
+    const sideGap = Math.max(10, Math.min(16, Math.round(workspaceW * 0.009)));
 
-    const columnsCandidates = total <= 50 ? [4, 5] : total <= 100 ? [4, 5, 6] : [4, 5, 6];
+    // Ortadaki puzzle masanın ana objesi; yan alanlara da 4 sütunluk gerçek
+    // bir parça dağılımı sığabilsin diye ekranın yaklaşık yarısını kullanıyoruz.
+    let boardCssWidth = Math.min(900, workspaceW * 0.53, workspaceH * aspect);
+    boardCssWidth = Math.max(500, boardCssWidth);
 
-    const calculate = (trayColumns) => {
-      const pieceRatioW = (room.boardW / room.cols + PAD * 2) / room.boardW;
-      const sideConstant = 16 + (trayColumns - 1) * 6;
-      const widthDenominator = 1 + 2 * trayColumns * pieceRatioW;
-      const maxBoardByWidth = Math.max(360, (viewport.width - 2 * sideConstant - 2 * sideGap) / widthDenominator);
-      const heightLimit = usableHeight * aspect;
-      const boardCssWidth = Math.max(360, Math.min(980, viewport.width * 0.56, heightLimit, maxBoardByWidth));
-      const boardCssHeight = boardCssWidth / aspect;
-      const boardScale = boardCssWidth / room.boardW;
-      const pieceCssW = (room.boardW / room.cols + PAD * 2) * boardScale;
-      const pieceCssH = (room.boardH / room.rows + PAD * 2) * boardScale;
-      const sideWidth = sideConstant + trayColumns * pieceCssW;
-      const rowsPerSide = Math.ceil(half / trayColumns);
-      const requiredHeight = rowsPerSide * pieceCssH + Math.max(0, rowsPerSide - 1) * 5 + 4;
-      return { trayColumns, boardCssWidth, boardCssHeight, boardScale, pieceCssW, pieceCssH, sideWidth, requiredHeight, trayScroll: requiredHeight > boardCssHeight + 2 };
-    };
+    const cols = Math.max(1, Number(room.cols) || 1);
+    const maxBoardByFourColumns = (workspaceW - 2 * sideGap - 12) / (0.5 + 4 / cols);
+    boardCssWidth = Math.min(boardCssWidth, maxBoardByFourColumns);
 
-    let best = null;
-    for (const cols of columnsCandidates) {
-      const candidate = calculate(cols);
-      if (!best) best = candidate;
-      const fits = candidate.requiredHeight <= candidate.boardCssHeight + 2;
-      if (fits) { best = candidate; break; }
-      if (candidate.requiredHeight < best.requiredHeight) best = candidate;
+    if (aspect < 0.75) {
+      boardCssWidth = Math.min(boardCssWidth, workspaceW * 0.58);
     }
 
-    return { ...best, sideGap };
+    const boardCssHeight = boardCssWidth / aspect;
+    const boardScale = boardCssWidth / room.boardW;
+    const boardOffsetX = Math.max(0, (workspaceW - boardCssWidth) / 2);
+    const boardOffsetY = Math.max(8, (workspaceH - boardCssHeight) / 2);
+    const sideWidth = Math.max(0, (workspaceW - boardCssWidth - sideGap * 2) / 2);
+    const pieceCssW = (room.boardW / cols) * boardScale;
+    const pieceCssH = (room.boardH / Math.max(1, Number(room.rows) || 1)) * boardScale;
+
+    return {
+      workspaceW,
+      workspaceH,
+      boardCssWidth,
+      boardCssHeight,
+      boardScale,
+      boardOffsetX,
+      boardOffsetY,
+      sideWidth,
+      pieceCssW,
+      pieceCssH,
+      trayColumns: 4,
+      trayScroll: false,
+      sideGap,
+    };
   }
+
+  function getPieceDisplayPosition(key, p) {
+    if (
+      sideTrayMode &&
+      p &&
+      !p.placed &&
+      !p.movedAt &&
+      trayPositionsRef.current[key]
+    ) {
+      return trayPositionsRef.current[key];
+    }
+    return { x: Number(p?.x) || 0, y: Number(p?.y) || 0 };
+  }
+
+  function rebuildSideTrayPositions() {
+    if (!room || !sideTrayMode) return;
+    const metrics = getSideLayoutMetrics();
+    const keys = getRandomizedTrayKeys().filter((key) => {
+      const p = piecesRef.current[key];
+      return p && !p.placed && !p.movedAt;
+    });
+
+    const half = Math.ceil(keys.length / 2);
+    const columns = 4;
+    const pieceW = metrics.pieceCssW;
+    const pieceH = metrics.pieceCssH;
+    const rows = Math.max(1, Math.ceil(half / columns));
+    const horizontalGap = 5;
+    const verticalGap = 5;
+    const stepX = pieceW + horizontalGap;
+    const stepY = Math.min(pieceH + verticalGap, Math.max(18, (metrics.workspaceH - 16) / rows));
+
+    const next = {};
+    keys.forEach((key, index) => {
+      const sideIndex = index < half ? index : index - half;
+      const col = sideIndex % columns;
+      const row = Math.floor(sideIndex / columns);
+      const isLeft = index < half;
+      const sideStartX = isLeft
+        ? 10
+        : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap + 10;
+      const maxSideX = isLeft
+        ? Math.max(10, metrics.sideWidth - pieceW - 6)
+        : metrics.workspaceW - pieceW - 10;
+      const rawScreenX = sideStartX + col * stepX;
+      const screenX = Math.max(isLeft ? 4 : metrics.boardOffsetX + metrics.boardCssWidth + metrics.sideGap + 4, Math.min(maxSideX, rawScreenX));
+
+      const seed = hashSeed(room.seed, `${key}:${isLeft ? "L" : "R"}`);
+      const jitterX = ((seed % 1000) / 1000 - 0.5) * Math.min(4, horizontalGap * 0.7);
+      const jitterY = (((seed >>> 10) % 1000) / 1000 - 0.5) * Math.min(4, verticalGap * 0.7);
+      const finalScreenX = Math.max(0, Math.min(metrics.workspaceW - (pieceW + 2 * 0), screenX + jitterX));
+      const finalScreenY = Math.max(4, Math.min(metrics.workspaceH - pieceH, row * stepY + 8 + jitterY));
+
+      // p.x/p.y board-koordinatları olarak kalıyor; sadece ilk yerleşim ekran
+      // koordinatından türetiliyor. Kullanıcı taşıdığı anda kalıcı konuma dönüşüyor.
+      next[key] = {
+        x: (finalScreenX - metrics.boardOffsetX) / metrics.boardScale + PAD,
+        y: (finalScreenY - metrics.boardOffsetY) / metrics.boardScale + PAD,
+      };
+    });
+
+    trayPositionsRef.current = next;
+    boardTransformRef.current = {
+      scale: metrics.boardScale,
+      offsetX: metrics.boardOffsetX,
+      offsetY: metrics.boardOffsetY,
+      workspaceW: metrics.workspaceW,
+      workspaceH: metrics.workspaceH,
+    };
+  }
+
+  useEffect(() => {
+    if (!room || !sideTrayMode) return;
+    rebuildSideTrayPositions();
+    staticDirtyRef.current = true;
+    dynamicDirtyRef.current = true;
+    dirtyRef.current = true;
+  }, [room, sideTrayMode, viewport.width, viewport.height]);
 
   function formatTime(totalSeconds) {
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
@@ -1075,9 +1095,10 @@ export default function Game({
       const p = piecesRef.current[key];
       if (!p || p.placed) continue;
 
+      const displayPos = getPieceDisplayPosition(key, p);
       const angle = -((Number(p.rotation) || 0) * Math.PI) / 180;
-      const cx = p.x + pieceW / 2;
-      const cy = p.y + pieceH / 2;
+      const cx = displayPos.x + pieceW / 2;
+      const cy = displayPos.y + pieceH / 2;
       const dx = px - cx;
       const dy = py - cy;
       const localX = dx * Math.cos(angle) - dy * Math.sin(angle) + pieceW / 2;
@@ -1122,7 +1143,7 @@ export default function Game({
     const getDynamicKeys = () => {
       const keys = new Set();
 
-      if (draggingRef.current?.key && !(draggingRef.current.fromTray && !draggingRef.current.overBoard)) {
+      if (draggingRef.current?.key) {
         keys.add(draggingRef.current.key);
       }
 
@@ -1145,11 +1166,12 @@ export default function Game({
         ? 0
         : Math.abs(pieceW * Math.sin(angle)) / 2 + Math.abs(pieceH * Math.cos(angle)) / 2 - pieceH / 2;
 
+      const t = boardTransformRef.current;
       return {
-        x: p.x - PAD - Math.max(0, extraX) - 4,
-        y: p.y - PAD - Math.max(0, extraY) - 4,
-        w: pieceW + PAD * 2 + Math.max(0, extraX) * 2 + 8,
-        h: pieceH + PAD * 2 + Math.max(0, extraY) * 2 + 8,
+        x: t.offsetX + (p.x - PAD - Math.max(0, extraX) - 4) * t.scale,
+        y: t.offsetY + (p.y - PAD - Math.max(0, extraY) - 4) * t.scale,
+        w: (pieceW + PAD * 2 + Math.max(0, extraX) * 2 + 8) * t.scale,
+        h: (pieceH + PAD * 2 + Math.max(0, extraY) * 2 + 8) * t.scale,
       };
     };
 
@@ -1206,8 +1228,23 @@ export default function Game({
       const isDark =
         document.documentElement.dataset.theme === "dark" ||
         theme === "dark";
+      const metrics = sideTrayMode ? getSideLayoutMetrics() : {
+        boardScale: canvas.width / Math.max(1, boardW),
+        boardOffsetX: 0,
+        boardOffsetY: 0,
+      };
+      boardTransformRef.current = {
+        scale: metrics.boardScale,
+        offsetX: metrics.boardOffsetX,
+        offsetY: metrics.boardOffsetY,
+        workspaceW: canvas.width,
+        workspaceH: canvas.height,
+      };
 
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.setTransform(metrics.boardScale, 0, 0, metrics.boardScale, metrics.boardOffsetX, metrics.boardOffsetY);
 
       // Tahta
       ctx.fillStyle = isDark ? "#000000" : "#fff5f7";
@@ -1262,11 +1299,14 @@ export default function Game({
 
         const p = piecesRef.current[key];
         if (!p) continue;
-        if (sideTrayMode && !p.placed && !p.movedAt && !dynamicKeys.has(key)) continue;
-
-        drawPiece(ctx, key, p, pieceW, pieceH, false);
+        const displayPos = getPieceDisplayPosition(key, p);
+        const drawState = (displayPos.x === p.x && displayPos.y === p.y)
+          ? p
+          : { ...p, x: displayPos.x, y: displayPos.y };
+        drawPiece(ctx, key, drawState, pieceW, pieceH, false);
       }
 
+      ctx.restore();
       staticDirtyRef.current = false;
     }
 
@@ -1280,14 +1320,28 @@ export default function Game({
       const { boardW, boardH, rows, cols } = room;
       const pieceW = boardW / cols;
       const pieceH = boardH / rows;
+      const metrics = sideTrayMode ? getSideLayoutMetrics() : {
+        boardScale: canvas.width / Math.max(1, boardW),
+        boardOffsetX: 0,
+        boardOffsetY: 0,
+      };
+      boardTransformRef.current = {
+        scale: metrics.boardScale,
+        offsetX: metrics.boardOffsetX,
+        offsetY: metrics.boardOffsetY,
+        workspaceW: canvas.width,
+        workspaceH: canvas.height,
+      };
 
-      // Dynamic canvas transparandır. Önceki hareketli bölgeleri temizleyerek
-      // alttaki static canvası tekrar görünür hale getiriyoruz.
+      // Dynamic canvası temizlerken ekran piksel koordinatlarını kullanıyoruz.
       const oldBounds = dynamicBoundsRef.current;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       for (const b of oldBounds) {
         if (!b) continue;
         ctx.clearRect(b.x, b.y, b.w, b.h);
       }
+      ctx.save();
+      ctx.setTransform(metrics.boardScale, 0, 0, metrics.boardScale, metrics.boardOffsetX, metrics.boardOffsetY);
 
       const nextBounds = [];
       const dynamicKeys = getDynamicKeys();
@@ -1300,7 +1354,10 @@ export default function Game({
 
         if (!p) return;
 
-        let drawPieceState = p;
+        const displayPos = getPieceDisplayPosition(key, p);
+        let drawPieceState = (displayPos.x === p.x && displayPos.y === p.y)
+          ? p
+          : { ...p, x: displayPos.x, y: displayPos.y };
 
         // Remote oyuncunun canlı pozisyonu, durable state'i değiştirmeden
         // yalnızca dynamic katmanda gösterilir.
@@ -1360,6 +1417,7 @@ export default function Game({
       }
 
       dynamicBoundsRef.current = nextBounds;
+      ctx.restore();
       dynamicDirtyRef.current = false;
 
       // Highlight süresi dolana kadar yeni frame istemeye gerek yok; timeout
@@ -1388,184 +1446,82 @@ export default function Game({
       cancelAnimationFrame(raf);
       dynamicBoundsRef.current = [];
     };
-  }, [room, players, showPreview, theme]);
-  function handleTrayPointerDown(e, key) {
-    if (!room || !sideTrayMode) return;
-    const p = piecesRef.current[key];
-    const pc = pieceCanvasesRef.current[key];
-    if (!p || p.placed || !pc) return;
-
-    const pieceRect = pc.getBoundingClientRect();
-    const floating = document.createElement("canvas");
-    floating.width = pc.width;
-    floating.height = pc.height;
-    floating.style.width = `${pieceRect.width}px`;
-    floating.style.height = `${pieceRect.height}px`;
-    floating.style.position = "fixed";
-    floating.style.left = `${pieceRect.left}px`;
-    floating.style.top = `${pieceRect.top}px`;
-    floating.style.zIndex = "1000";
-    floating.style.pointerEvents = "none";
-    floating.style.margin = "0";
-    floating.className = "side-drag-floating";
-    floating.getContext("2d")?.drawImage(pc, 0, 0);
-    document.body.appendChild(floating);
-
-    zCounterRef.current += 1;
-    zOrderRef.current[key] = zCounterRef.current;
-    setSelectedPieceKey(key);
-    lastFirebaseWriteRef.current = Date.now();
-    draggingRef.current = {
-      key,
-      fromTray: true,
-      overBoard: false,
-      offsetScreenX: e.clientX - pieceRect.left,
-      offsetScreenY: e.clientY - pieceRect.top,
-      floating,
-    };
-
-    const move = (event) => {
-      if (event.cancelable) event.preventDefault();
-      handlePointerMove(event);
-    };
-    const up = (event) => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      handleTrayPointerUp(event);
-    };
-    window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", up, { once: true });
-    window.addEventListener("pointercancel", up, { once: true });
-  }
-
-  function handleTrayPointerUp(e) {
-    const d = draggingRef.current;
-    if (!d?.fromTray || !room) return;
-    const p = piecesRef.current[d.key];
-    const canvas = canvasRef.current;
-    const floating = d.floating;
-    const rect = canvas?.getBoundingClientRect();
-    const inside = !!rect &&
-      e.clientX >= rect.left && e.clientX <= rect.right &&
-      e.clientY >= rect.top && e.clientY <= rect.bottom;
-
-    if (floating?.isConnected) floating.remove();
-
-    if (inside && p && canvas) {
-      // handlePointerMove zaten tahtanın koordinatını güncelledi.
-      draggingRef.current = { ...d, overBoard: true };
-      handlePointerUp();
-      return;
-    }
-
-    draggingRef.current = null;
-    setSelectedPieceKey(null);
-    remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
-    dynamicDirtyRef.current = true;
-    dirtyRef.current = true;
-    setTrayVersion(v => v + 1);
-  }
+  }, [room, players, showPreview, theme, viewport.width, viewport.height, sideTrayMode]);
 
   function handlePointerDown(e) {
     if (e.button === 2) {
       e.preventDefault();
       if (!room?.rotatePieces) return;
+    }
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
+    const canvas = canvasRef.current;
+    if (!canvas || !room) return;
 
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const px = (e.clientX - rect.left) * scaleX;
-      const py = (e.clientY - rect.top) * scaleY;
+    const rect = canvas.getBoundingClientRect();
+    const metrics = sideTrayMode ? getSideLayoutMetrics() : {
+      boardScale: canvas.width / Math.max(1, room.boardW),
+      boardOffsetX: 0,
+      boardOffsetY: 0,
+    };
+    boardTransformRef.current = {
+      scale: metrics.boardScale,
+      offsetX: metrics.boardOffsetX,
+      offsetY: metrics.boardOffsetY,
+      workspaceW: canvas.width,
+      workspaceH: canvas.height,
+    };
+
+    const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const px = (screenX - metrics.boardOffsetX) / metrics.boardScale;
+    const py = (screenY - metrics.boardOffsetY) / metrics.boardScale;
+
+    if (e.button === 2) {
       const key = findPieceAtPoint(px, py);
-
       if (key) rotatePiece(key);
       return;
     }
-    const canvas =
-      canvasRef.current;
 
-    if (!canvas || !room) return;
+    const { cols, boardW, boardH } = room;
+    const pieceW = boardW / cols;
+    const pieceH = boardH / room.rows;
+    const keys = Object.keys(piecesRef.current).sort(
+      (a, b) => (zOrderRef.current[b] || 0) - (zOrderRef.current[a] || 0)
+    );
 
-    const rect =
-      canvas.getBoundingClientRect();
-
-    const scaleX =
-      canvas.width / rect.width;
-
-    const scaleY =
-      canvas.height / rect.height;
-
-    const px =
-      (e.clientX - rect.left) *
-      scaleX;
-
-    const py =
-      (e.clientY - rect.top) *
-      scaleY;
-
-    const {
-      cols,
-      boardW,
-      boardH,
-    } = room;
-
-    const pieceW =
-      boardW / cols;
-
-    const pieceH =
-      boardH / room.rows;
-
-    const keys =
-      Object.keys(
-        piecesRef.current
-      ).sort(
-        (a, b) =>
-          (zOrderRef.current[b] || 0) -
-          (zOrderRef.current[a] || 0)
-      );
-
-    for (
-      const key of keys
-    ) {
-      const p =
-        piecesRef.current[key];
-
+    for (const key of keys) {
+      const p = piecesRef.current[key];
       if (!p || p.placed) continue;
 
+      const displayPos = getPieceDisplayPosition(key, p);
       const rotation = ((Number(p.rotation) || 0) * Math.PI) / 180;
-      const dx = px - (p.x + pieceW / 2);
-      const dy = py - (p.y + pieceH / 2);
+      const dx = px - (displayPos.x + pieceW / 2);
+      const dy = py - (displayPos.y + pieceH / 2);
       const cos = Math.cos(-rotation);
       const sin = Math.sin(-rotation);
       const localX = dx * cos - dy * sin + pieceW / 2;
       const localY = dx * sin + dy * cos + pieceH / 2;
+      const clickablePad = sideTrayMode && !p.movedAt ? Math.min(PAD, 14) : PAD;
 
       if (
-        localX >= -PAD &&
-        localX <= pieceW + PAD &&
-        localY >= -PAD &&
-        localY <= pieceH + PAD
+        localX >= -clickablePad &&
+        localX <= pieceW + clickablePad &&
+        localY >= -clickablePad &&
+        localY <= pieceH + clickablePad
       ) {
+        p.x = displayPos.x;
+        p.y = displayPos.y;
         draggingRef.current = {
           key,
           offsetX: px - p.x,
           offsetY: py - p.y,
+          fromTray: sideTrayMode && !p.movedAt,
         };
 
         setSelectedPieceKey(key);
-
         zCounterRef.current += 1;
-
-        zOrderRef.current[key] =
-          zCounterRef.current;
-
-        canvas.setPointerCapture(
-          e.pointerId
-        );
+        zOrderRef.current[key] = zCounterRef.current;
+        canvas.setPointerCapture?.(e.pointerId);
         lastFirebaseWriteRef.current = Date.now();
         update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
           key,
@@ -1573,7 +1529,6 @@ export default function Game({
           y: Math.round(p.y),
           movedAt: Date.now(),
         }).catch(() => {});
-
         break;
       }
     }
@@ -1586,59 +1541,51 @@ export default function Game({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
+    const metrics = sideTrayMode ? getSideLayoutMetrics() : {
+      boardScale: canvas.width / Math.max(1, room.boardW),
+      boardOffsetX: 0,
+      boardOffsetY: 0,
+    };
+    boardTransformRef.current = {
+      scale: metrics.boardScale,
+      offsetX: metrics.boardOffsetX,
+      offsetY: metrics.boardOffsetY,
+      workspaceW: canvas.width,
+      workspaceH: canvas.height,
+    };
 
-    if (d.fromTray) {
-      const floating = d.floating;
-      if (floating) {
-        const maxLeft = Math.max(0, window.innerWidth - floating.offsetWidth);
-        const maxTop = Math.max(0, window.innerHeight - floating.offsetHeight);
-        const left = Math.max(0, Math.min(maxLeft, e.clientX - d.offsetScreenX));
-        const top = Math.max(0, Math.min(maxTop, e.clientY - d.offsetScreenY));
-        floating.style.left = `${left}px`;
-        floating.style.top = `${top}px`;
-      }
+    const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const px = (screenX - metrics.boardOffsetX) / metrics.boardScale;
+    const py = (screenY - metrics.boardOffsetY) / metrics.boardScale;
+    const p = piecesRef.current[d.key];
+    if (!p) return;
 
-      const inside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-      d.overBoard = inside;
-      if (d.floating) d.floating.style.visibility = inside ? "hidden" : "visible";
+    const pieceW = room.boardW / room.cols;
+    const pieceH = room.boardH / room.rows;
 
-      const p = piecesRef.current[d.key];
-      if (!p) return;
-      if (!inside) {
-        dynamicDirtyRef.current = true;
-        dirtyRef.current = true;
-        return;
-      }
-
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const pieceW = room.boardW / room.cols;
-      const pieceH = room.boardH / room.rows;
-      p.x = Math.max(-PAD, Math.min(canvas.width - pieceW + PAD, (e.clientX - rect.left - d.offsetScreenX) * scaleX));
-      p.y = Math.max(-PAD, Math.min(canvas.height - pieceH + PAD, (e.clientY - rect.top - d.offsetScreenY) * scaleY));
-      dynamicDirtyRef.current = true;
-      dirtyRef.current = true;
+    if (sideTrayMode) {
+      const minX = (-metrics.boardOffsetX) / metrics.boardScale + PAD;
+      const minY = (-metrics.boardOffsetY) / metrics.boardScale + PAD;
+      const maxX = (metrics.workspaceW - metrics.boardOffsetX) / metrics.boardScale - pieceW - PAD;
+      const maxY = (metrics.workspaceH - metrics.boardOffsetY) / metrics.boardScale - pieceH - PAD;
+      p.x = Math.max(minX, Math.min(maxX, px - d.offsetX));
+      p.y = Math.max(minY, Math.min(maxY, py - d.offsetY));
     } else {
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      const px = (e.clientX - rect.left) * scaleX;
-      const py = (e.clientY - rect.top) * scaleY;
-      const p = piecesRef.current[d.key];
-      if (!p) return;
-      const pieceW = room.boardW / room.cols;
-      const pieceH = room.boardH / room.rows;
-      p.x = Math.max(-PAD, Math.min(canvas.width - pieceW + PAD, px - d.offsetX));
-      p.y = Math.max(-PAD, Math.min(canvas.height - pieceH + PAD, py - d.offsetY));
-      dirtyRef.current = true;
-      dynamicDirtyRef.current = true;
+      const localX = (e.clientX - rect.left) * scaleX;
+      const localY = (e.clientY - rect.top) * scaleY;
+      p.x = Math.max(-PAD, Math.min(canvas.width - pieceW + PAD, localX - d.offsetX));
+      p.y = Math.max(-PAD, Math.min(canvas.height - pieceH + PAD, localY - d.offsetY));
     }
 
+    dirtyRef.current = true;
+    dynamicDirtyRef.current = true;
+
     const now = Date.now();
-    if (d.fromTray && !d.overBoard) return;
     if (now - lastFirebaseWriteRef.current >= FIREBASE_MOVE_INTERVAL) {
       lastFirebaseWriteRef.current = now;
-      const p = piecesRef.current[d.key];
-      if (!p) return;
       update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
         key: d.key,
         x: Math.round(p.x),
@@ -1651,16 +1598,6 @@ export default function Game({
   function handlePointerUp() {
     const d = draggingRef.current;
     if (!d || !room) return;
-    if (d.fromTray) {
-      if (!d.overBoard) {
-        draggingRef.current = null;
-        setSelectedPieceKey(null);
-        if (d.floating?.isConnected) d.floating.remove();
-        setTrayVersion(v => v + 1);
-        return;
-      }
-      if (d.floating?.isConnected) d.floating.remove();
-    }
     draggingRef.current = null;
 
     const {
@@ -1757,7 +1694,6 @@ export default function Game({
     });
 
     remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
-    setTrayVersion(v => v + 1);
     setSelectedPieceKey(null);
   }
 
@@ -2247,31 +2183,26 @@ export default function Game({
       <div
         className={`game-board-layout ${sideTrayMode ? "side-tray-layout" : "bottom-tray-layout"}`}
         style={sideTrayMode ? {
-          "--side-tray-width": `${sideMetrics.sideWidth}px`,
           "--board-css-width": `${canvasCssWidth}px`,
           "--board-css-height": `${canvasCssHeight}px`,
-          "--tray-piece-size": `${sideMetrics.pieceCssW}px`,
-          "--tray-piece-height": `${sideMetrics.pieceCssH}px`,
-          "--tray-columns": `${sideMetrics.trayColumns}`,
-          "--side-tray-height": `${sideMetrics.boardCssHeight}px`,
-          "--side-tray-gap": `${sideMetrics.sideGap}px`,
+          "--workspace-width": `${sideMetrics.workspaceW}px`,
+          "--workspace-height": `${sideMetrics.workspaceH}px`,
         } : undefined}
       >
-        {sideTrayMode && <div ref={leftTrayRef} className={`side-tray side-tray-left ${sideMetrics?.trayScroll ? "side-tray-scroll" : ""}`} aria-label="Sol parça alanı" />}
         <div
           className="canvas-wrap"
           style={{
             position: "relative",
-            width: `${canvasCssWidth}px`,
-            height: `${canvasCssHeight}px`,
+            width: sideTrayMode ? `${sideMetrics.workspaceW}px` : `${canvasCssWidth}px`,
+            height: sideTrayMode ? `${sideMetrics.workspaceH}px` : `${canvasCssHeight}px`,
             maxWidth: "none",
             flex: sideTrayMode ? "0 0 auto" : undefined,
           }}
         >
         <canvas
           ref={staticCanvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
+          width={sideTrayMode ? Math.max(1, Math.round(sideMetrics.workspaceW)) : canvasWidth}
+          height={sideTrayMode ? Math.max(1, Math.round(sideMetrics.workspaceH)) : canvasHeight}
           aria-hidden="true"
           style={{
             position: "absolute",
@@ -2285,8 +2216,8 @@ export default function Game({
         />
         <canvas
           ref={canvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
+          width={sideTrayMode ? Math.max(1, Math.round(sideMetrics.workspaceW)) : canvasWidth}
+          height={sideTrayMode ? Math.max(1, Math.round(sideMetrics.workspaceH)) : canvasHeight}
           style={{
             position: "absolute",
             inset: 0,
@@ -2306,11 +2237,10 @@ export default function Game({
           onContextMenu={(e) => e.preventDefault()}
         />
         </div>
-        {sideTrayMode && <div ref={rightTrayRef} className={`side-tray side-tray-right ${sideMetrics?.trayScroll ? "side-tray-scroll" : ""}`} aria-label="Sağ parça alanı" />}
       </div>
 
       <p className="hint">
-        {sideTrayMode ? "Parçaları sağa ve sola dağıttık. Elindeki parçayı ekranın istediğin yerine taşıyabilirsin." : "Parçaları alttaki tepsiden tahtaya sürükle. Doğru yere yakın bırakınca kilitlenir."}
+        {sideTrayMode ? "Parçalar masanın sağına ve soluna dağıldı. Elindeki parçayı masa üzerinde istediğin yere taşıyabilirsin." : "Parçaları alttaki tepsiden tahtaya sürükle. Doğru yere yakın bırakınca kilitlenir."}
       </p>
 
       <button
