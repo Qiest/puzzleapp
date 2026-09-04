@@ -483,3 +483,71 @@ html[data-theme="dark"] .side-tray-right::before {
 .theme-toggle-button.is-dark .moon-icon{color:#cfd4ff}.theme-toggle-button.is-dark .sun-icon{color:#f1bd74}
 .game-theme-toggle{margin-left:2px}
 @media(max-width:720px){.theme-toggle-button{width:54px;height:30px}.theme-toggle-button.is-dark .theme-toggle-knob{transform:translateX(24px)}.game-theme-toggle{order:-1}.game-header .theme-toggle-button{margin-left:auto}}
+
+/* Clean responsive side trays: grid, no labels, no forced single-column stack */
+.side-tray {
+  display: grid !important;
+  grid-template-columns: repeat(var(--tray-columns, 3), minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  align-content: start;
+  justify-items: center;
+  align-items: start;
+  gap: 4px 3px;
+  padding: 8px 5px;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+.side-tray-scroll {
+  overflow-y: auto !important;
+}
+.side-tray::before,
+.side-tray-left::before,
+.side-tray-right::before {
+  content: none !important;
+  display: none !important;
+}
+.side-tray-piece {
+  width: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 !important;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+.side-tray-piece canvas {
+  width: min(var(--tray-piece-size, 50px), 100%) !important;
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+.side-tray-layout .canvas-wrap {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: visible;
+}
+@media (min-width: 600px) and (orientation: landscape) {
+  .side-tray-layout {
+    width: 100%;
+    max-width: none;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .side-tray-layout .side-tray {
+    flex: 0 0 var(--side-tray-width, 180px);
+    width: var(--side-tray-width, 180px);
+    max-width: var(--side-tray-width, 180px);
+    height: var(--board-css-height, 620px);
+  }
+}
+@media (max-width: 599px), (orientation: portrait) {
+  .side-tray-layout { display: block; }
+  .side-tray-layout .side-tray { display: none !important; }
+}
+html[data-theme="dark"] .side-tray {
+  background: #111214;
+  border-color: #30333b;
+}
