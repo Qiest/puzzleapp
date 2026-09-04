@@ -177,74 +177,92 @@ html[data-theme="dark"] .history-card{background:#1b1d21;border-color:#30333b}.t
 @media(max-width:520px){.history-grid{grid-template-columns:1fr}.history-card-copy{padding:8px}}
 
 /* Responsive side trays + mobile live feed additions */
-/* Side piece start areas: no special tray card, just a compact piece grid. */
+/* Side piece trays + responsive game board */
 .game-board-layout {
   width: 100%;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: var(--side-gap, 12px);
+  gap: clamp(6px, 0.8vw, 14px);
   min-width: 0;
 }
 
 .side-tray {
-  flex: 0 0 var(--side-tray-width, 190px);
-  width: var(--side-tray-width, 190px);
-  max-width: var(--side-tray-width, 190px);
-  height: var(--side-tray-height, 520px);
-  max-height: var(--side-tray-height, 520px);
+  flex: 0 0 var(--side-tray-width, 150px);
   min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(var(--tray-columns, 3), minmax(0, 1fr));
-  grid-auto-rows: var(--tray-cell-height, 60px);
-  align-content: start;
-  justify-items: center;
-  gap: 2px 2px;
-  padding: 4px 2px;
-  overflow-y: auto;
+  width: var(--side-tray-width, 150px);
+  max-width: var(--side-tray-width, 150px);
+  padding: 34px 6px 6px;
+  overflow-y: hidden;
   overflow-x: hidden;
+  border-radius: 18px;
+  border: 1px solid #ead6dd;
+  background: #faf3f6;
   scrollbar-width: thin;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
+}
+
+.side-tray::before {
+  position: absolute;
+  content: "";
 }
 
 .side-tray-piece {
-  position: relative;
-  width: var(--tray-cell-width, 70px) !important;
-  height: var(--tray-cell-height, 60px) !important;
-  min-width: 0;
-  min-height: 0;
+  width: 100%;
+  min-height: 66px;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: visible;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 12px;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.side-tray-piece:active { cursor: grabbing; }
+.side-tray-piece:active {
+  cursor: grabbing;
+}
+
 .side-tray-piece canvas {
   display: block;
-  width: var(--tray-piece-size, auto) !important;
-  height: var(--tray-piece-height, auto) !important;
-  max-width: none !important;
-  flex: 0 0 auto;
+  max-width: 100%;
+  height: auto !important;
   filter: drop-shadow(0 3px 5px rgba(60, 35, 45, 0.12));
 }
 
+.side-tray-fit {
+  overflow-y: hidden !important;
+  align-content: start;
+  grid-auto-rows: min-content;
+  scrollbar-gutter: stable;
+}
+
+.side-tray-scroll {
+  overflow-y: auto !important;
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
+.side-tray-fit .side-tray-piece,
+.side-tray-scroll .side-tray-piece {
+  margin-bottom: 0;
+}
+
+
 .side-tray-layout .canvas-wrap {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: visible;
 }
 
-.side-tray-layout .side-tray { align-self: center; }
+.side-tray-layout .side-tray {
+  align-self: stretch;
+}
 
 .game-live-feed {
   position: fixed;
@@ -326,8 +344,8 @@ html[data-theme="dark"] .btn.secondary {
 }
 
 html[data-theme="dark"] .side-tray {
-  background: transparent;
-  border-color: transparent;
+  background: #0b0b0c;
+  border-color: #353237;
 }
 
 html[data-theme="dark"] .side-tray-piece canvas {
@@ -404,6 +422,30 @@ html[data-theme="dark"] .game .btn.primary { color: #fff; }
   margin-bottom: 10px;
 }
 
+.side-tray {
+  position: relative;
+}
+
+.side-tray-left::before,
+.side-tray-right::before {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: #8b747d;
+}
+
+.side-tray-left::before { content: "SOL PARÇALAR"; }
+.side-tray-right::before { content: "SAĞ PARÇALAR"; }
+
+html[data-theme="dark"] .side-tray-left::before,
+html[data-theme="dark"] .side-tray-right::before {
+  color: #aaa0a6;
+}
 
 @media (max-width: 650px) {
   .game-tools {
@@ -567,66 +609,93 @@ html[data-theme="dark"] .side-tray {
   .side-tray-layout .side-tray { display: none !important; }
 }
 
+/* FINAL: real-world side spread — the side areas are only starting zones. */
+.side-tray-layout {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: var(--side-tray-width) var(--board-css-width) var(--side-tray-width);
+  column-gap: 12px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--board-css-height);
+  overflow: visible !important;
+}
 
-/* Final side-piece behavior: side areas are only a starting pool, not a boxed tray. */
-@media (min-width: 600px) and (orientation: landscape) {
+.side-tray-layout .canvas-wrap {
+  width: var(--board-css-width) !important;
+  height: var(--board-css-height) !important;
+  flex: none !important;
+  overflow: visible !important;
+  margin: 0;
+}
+
+.side-tray-layout .side-tray {
+  position: relative !important;
+  width: var(--side-tray-width) !important;
+  max-width: var(--side-tray-width) !important;
+  height: var(--board-css-height) !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: block !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-sizing: border-box;
+  touch-action: none;
+}
+
+.side-tray-layout .side-tray::before,
+.side-tray-layout .side-tray::after {
+  display: none !important;
+  content: none !important;
+}
+
+.side-tray-layout .side-tray-piece {
+  position: absolute !important;
+  display: block !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  cursor: grab;
+  overflow: visible !important;
+}
+
+.side-tray-layout .side-tray-piece canvas {
+  display: block !important;
+  width: var(--tray-piece-size) !important;
+  height: var(--tray-piece-height) !important;
+  max-width: none !important;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,.16));
+}
+
+.side-tray-layout .side-tray-piece:active {
+  cursor: grabbing;
+}
+
+.side-drag-floating {
+  position: fixed !important;
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  max-width: none !important;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,.2));
+}
+
+html[data-theme="dark"] .side-tray-layout .side-tray-piece canvas {
+  filter: drop-shadow(0 5px 9px rgba(0,0,0,.5));
+}
+
+@media (max-width: 599px), (orientation: portrait) {
   .side-tray-layout {
-    width: 100%;
-    max-width: none;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    gap: var(--side-gap, 12px);
-    overflow: visible;
+    display: block !important;
+    min-height: 0;
   }
   .side-tray-layout .side-tray {
-    flex: 0 0 var(--side-tray-width, 200px) !important;
-    width: var(--side-tray-width, 200px) !important;
-    max-width: var(--side-tray-width, 200px) !important;
-    height: var(--side-tray-height, 520px) !important;
-    max-height: var(--side-tray-height, 520px) !important;
-    padding: 4px 2px !important;
-    margin: 0 !important;
-    background: transparent !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    display: grid !important;
-    grid-template-columns: repeat(var(--tray-columns, 3), minmax(0, 1fr)) !important;
-    grid-auto-rows: var(--tray-cell-height, 60px) !important;
-    align-content: start !important;
-    justify-items: center !important;
-    align-items: center !important;
-    gap: 2px !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
-    scrollbar-width: none;
+    display: none !important;
   }
-  .side-tray-layout .side-tray::-webkit-scrollbar { width: 0; height: 0; }
-  .side-tray-layout .side-tray-piece {
-    width: var(--tray-cell-width, 70px) !important;
-    height: var(--tray-cell-height, 60px) !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    overflow: visible !important;
-    background: transparent !important;
-    border: 0 !important;
-  }
-  .side-tray-layout .side-tray-piece canvas {
-    width: var(--tray-piece-size, 80px) !important;
-    height: var(--tray-piece-height, 80px) !important;
-    max-width: none !important;
-    display: block !important;
-    flex: 0 0 auto !important;
-  }
-  .side-tray-layout .canvas-wrap {
-    flex: 0 0 auto !important;
-    overflow: visible !important;
-  }
-  .side-tray-layout .side-tray-left::before,
-  .side-tray-layout .side-tray-right::before { content: none !important; display: none !important; }
 }
