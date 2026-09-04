@@ -493,7 +493,7 @@ html[data-theme="dark"] .side-tray-right::before {
   justify-items: center;
   align-items: start;
   gap: 4px 3px;
-  padding: 8px 5px;
+  padding: 8px 6px;
   overflow-x: hidden;
   overflow-y: hidden;
   box-sizing: border-box;
@@ -518,7 +518,7 @@ html[data-theme="dark"] .side-tray-right::before {
   border-radius: 8px;
 }
 .side-tray-piece canvas {
-  width: min(var(--tray-piece-size, 50px), 100%) !important;
+  width: var(--tray-piece-size, 60px) !important;
   max-width: 100%;
   height: auto !important;
   display: block;

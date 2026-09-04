@@ -89,17 +89,47 @@ export default function Game({
   // aksi halde useEffect dependency array'inde TDZ (before initialization) oluşur.
   const isLandscape = viewport.width > viewport.height;
   const sideTrayMode = isLandscape && viewport.width >= 600;
-  const sideTrayWidth = sideTrayMode ? Math.max(145, Math.min(235, Math.round(viewport.width * 0.14))) : 0;
-  const trayAvailableHeight = Math.max(330, viewport.height - 270);
-  const trayPieceWidth = sideTrayMode
-    ? Math.max(24, Math.min(50, Math.floor(Math.min(
-        (sideTrayWidth - 20) / 4,
-        trayAvailableHeight / (Math.ceil(Math.max(1, Math.ceil((room?.rows || 10) * (room?.cols || 10)) / 2) / 4) + 2)
-      ))))
+
+  // Yan tepsilerdeki parça ile tahtadaki parça aynı CSS ölçeğinde kalır.
+  // Böylece tepsiden tahtaya alınca parça büyümüş gibi görünmez.
+  const roomRows = Math.max(1, Number(room?.rows) || 1);
+  const roomCols = Math.max(1, Number(room?.cols) || 1);
+  const roomPieces = roomRows * roomCols;
+  const logicalPieceW = room?.boardW ? room.boardW / roomCols : 0;
+  const logicalPieceH = room?.boardH ? room.boardH / roomRows : 0;
+  const sideTrayWidth = sideTrayMode
+    ? Math.min(300, Math.max(190, Math.round(viewport.width * 0.16)))
     : 0;
+  // Üç kolon, yan tepsiyi gerçek bir "parça havuzu" gibi tutuyor.
+  // 19" gibi geniş ekranlarda da dört kolona çıkabilir.
   const trayColumns = sideTrayMode
-    ? Math.max(2, Math.floor((sideTrayWidth - 12) / (trayPieceWidth + 4)))
+    ? Math.max(3, Math.min(4, Math.floor(sideTrayWidth / 78)))
     : 1;
+  const trayCellWidth = sideTrayMode
+    ? Math.max(42, (sideTrayWidth - 12 - (trayColumns - 1) * 5) / trayColumns)
+    : 0;
+  const trayRowsPerSide = sideTrayMode
+    ? Math.ceil(Math.ceil(roomPieces / 2) / trayColumns)
+    : 0;
+  const trayAvailableHeight = Math.max(360, viewport.height - 270);
+  const trayRowHeight = sideTrayMode
+    ? Math.max(42, trayAvailableHeight / Math.max(1, trayRowsPerSide))
+    : 0;
+  const trayCanvasWidthLimit = Math.max(20, trayCellWidth - 2);
+  const trayCanvasHeightLimit = Math.max(20, trayRowHeight - 3);
+  const trayScale = sideTrayMode && logicalPieceW && logicalPieceH
+    ? Math.min(
+        1,
+        trayCanvasWidthLimit / (logicalPieceW + PAD * 2),
+        trayCanvasHeightLimit / (logicalPieceH + PAD * 2)
+      )
+    : 1;
+  const trayPieceWidth = sideTrayMode
+    ? Math.max(18, Math.round((logicalPieceW + PAD * 2) * trayScale))
+    : 0;
+  const trayPieceHeight = sideTrayMode
+    ? Math.max(18, Math.round((logicalPieceH + PAD * 2) * trayScale))
+    : 0;
 
   const startedAtRef = useRef(null);
 
@@ -751,7 +781,7 @@ export default function Game({
         item.dataset.pieceKey = key;
         item.appendChild(pc);
         pc.style.width = `${trayPieceWidth}px`;
-        pc.style.height = "auto";
+        pc.style.height = `${trayPieceHeight}px`;
         pc.style.maxWidth = "100%";
         pc.style.touchAction = "none";
         pc.style.userSelect = "none";
@@ -1977,21 +2007,17 @@ export default function Game({
   }
 
   const canvasWidth = room.boardW;
+  const pieceH = room.boardH / room.rows;
+  const trayTop = room.boardH + 50;
 
-  const trayTop =
-    room.boardH + 50;
-
-  const pieceH =
-    room.boardH /
-    room.rows;
-
+  // Dikey moddaki eski alt tepsi düzenini koruyoruz.
   const trayCols = Math.max(5, Math.min(10, Math.ceil(Math.sqrt(totalPiecesForLayout(room.rows, room.cols) * 1.2))));
   const trayRows = Math.ceil((room.rows * room.cols) / trayCols);
-
   const canvasHeight = sideTrayMode
     ? room.boardH
     : trayTop + trayRows * pieceH * 1.22 + pieceH * 2;
-  const boardAspect = canvasWidth / Math.max(1, canvasHeight);
+
+  const boardAspect = canvasWidth / Math.max(1, room.boardH);
   const sideGap = sideTrayMode ? 10 : 0;
   const availableBoardWidth = sideTrayMode
     ? Math.max(280, viewport.width - (sideTrayWidth * 2) - (sideGap * 2) - 16)
@@ -1999,8 +2025,18 @@ export default function Game({
   const availableBoardHeight = sideTrayMode
     ? Math.max(300, viewport.height - 255)
     : Math.max(300, viewport.height - 250);
-  const canvasCssWidth = Math.max(260, Math.min(1100, availableBoardWidth, availableBoardHeight * boardAspect));
-  const canvasCssHeight = canvasHeight * (canvasCssWidth / canvasWidth);
+
+  // Side tray kullanırken tahta ölçeğini de aynı trayScale'e bağla.
+  // Böylece parça tepside kaç px ise tahtaya gelince de aynı px kalır.
+  const boardScale = sideTrayMode
+    ? Math.min(trayScale, availableBoardWidth / canvasWidth, availableBoardHeight / room.boardH)
+    : Math.min(1, availableBoardWidth / canvasWidth, availableBoardHeight / canvasHeight);
+  const canvasCssWidth = sideTrayMode
+    ? Math.max(1, Math.round(canvasWidth * boardScale))
+    : Math.max(260, Math.round(canvasWidth * boardScale));
+  const canvasCssHeight = sideTrayMode
+    ? Math.max(1, Math.round(room.boardH * boardScale))
+    : Math.max(220, Math.round(canvasHeight * (canvasCssWidth / canvasWidth)));
 
   const total =
     progress.total ||
