@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ref, set, get, update, onValue, push, remove, onDisconnect, query, orderByChild, startAt, endAt } from "firebase/database";
-import { auth, db, storage } from "./firebase.js";
+import { auth, db } from "./firebase.js";
 import { signOut, updatePassword } from "firebase/auth";
-import { ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
 import { computeGrid, generateEdges, pieceEdges, mulberry32, scatterPosition, createShuffledOrder, makeRoomCode } from "./puzzleUtils.js";
 
 const DIFFICULTIES = [
@@ -195,9 +194,7 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
         img.onerror = () => reject(new Error("Profil fotoğrafı okunamadı."));
         reader.readAsDataURL(file);
       });
-      const avatarRef = storageRef(storage, `profileAvatars/${user.uid}.jpg`);
-      await uploadString(avatarRef, avatar, "data_url", { contentType: "image/jpeg" });
-      const avatarUrl = await getDownloadURL(avatarRef);
+      const avatarUrl = avatar;
       await update(ref(db), {
         [`users/${user.uid}/avatar`]: avatarUrl,
         [`publicProfiles/${user.uid}/avatar`]: avatarUrl,
@@ -717,9 +714,7 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
           rotation: selected.rotate ? [0, 90, 180, 270][Math.floor(rand() * 4)] : 0,
         };
       }
-      const roomImageRef = storageRef(storage, `roomImages/${user.uid}/${code}.jpg`);
-      await uploadString(roomImageRef, dataUrl, "data_url", { contentType: "image/jpeg" });
-      const imageUrl = await getDownloadURL(roomImageRef);
+      const imageUrl = dataUrl;
 
       await set(ref(db, `rooms/${code}`), {
         ownerUid: user.uid,
