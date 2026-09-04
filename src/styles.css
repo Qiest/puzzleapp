@@ -699,3 +699,69 @@ html[data-theme="dark"] .side-tray-layout .side-tray-piece canvas {
     display: none !important;
   }
 }
+
+/* V6: gerçek masa yerleşimi — 4+ sütun, çakışmasız başlangıç noktaları */
+@media (min-width: 600px) and (orientation: landscape) {
+  .side-tray-layout {
+    display: grid !important;
+    grid-template-columns: var(--side-tray-width) var(--board-css-width) var(--side-tray-width) !important;
+    column-gap: var(--side-tray-gap, 12px) !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  .side-tray-layout .side-tray {
+    position: relative !important;
+    width: var(--side-tray-width) !important;
+    max-width: var(--side-tray-width) !important;
+    height: var(--side-tray-height, var(--board-css-height)) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: hidden !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
+    touch-action: none !important;
+  }
+
+  .side-tray-layout .side-tray.side-tray-scroll {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-width: thin;
+  }
+
+  .side-tray-layout .side-tray::before,
+  .side-tray-layout .side-tray::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .side-tray-layout .side-tray-piece {
+    position: absolute !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: var(--tray-piece-size) !important;
+    height: var(--tray-piece-height) !important;
+    min-width: var(--tray-piece-size) !important;
+    min-height: var(--tray-piece-height) !important;
+    overflow: visible !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    cursor: grab !important;
+    touch-action: none !important;
+  }
+
+  .side-tray-layout .side-tray-piece canvas {
+    width: var(--tray-piece-size) !important;
+    height: var(--tray-piece-height) !important;
+    max-width: none !important;
+    display: block !important;
+  }
+}
