@@ -76,6 +76,27 @@ export default function Game({
   const [zoom, setZoom] = useState(1);
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const [trayVersion, setTrayVersion] = useState(0);
+
+  // Responsive tepsi düzeni: cihazın gerçek kullanılabilir alanına göre hesaplanır.
+  const sideTrayMode = viewport.width >= 600 && viewport.width > viewport.height;
+  const sideTrayWidth = Math.max(108, Math.min(190, Math.round(viewport.width * 0.12)));
+
+  function getTrayMetrics(pieceCount) {
+    const safeCount = Math.max(1, Number(pieceCount) || 1);
+    const perSide = Math.ceil(safeCount / 2);
+    const availableHeight = Math.max(260, viewport.height - 235);
+    const minPiece = safeCount <= 100 ? 42 : 34;
+    const maxCols = Math.max(2, Math.min(4, Math.floor((sideTrayWidth - 18) / minPiece)));
+    const columns = Math.max(2, Math.min(maxCols, Math.ceil(Math.sqrt(perSide))));
+    const rows = Math.ceil(perSide / columns);
+    const gap = safeCount <= 100 ? 5 : 4;
+    const widthByColumns = (sideTrayWidth - 16 - (columns - 1) * gap) / columns;
+    const heightByRows = (availableHeight - 42 - (rows - 1) * gap) / rows;
+    const cellRatio = room ? (room.boardW / room.cols + PAD * 2) / (room.boardH / room.rows + PAD * 2) : 1;
+    const widthByHeight = Math.max(24, heightByRows * cellRatio);
+    const pieceWidth = Math.max(28, Math.floor(Math.min(widthByColumns, widthByHeight)));
+    return { perSide, columns, rows, gap, pieceWidth, availableHeight };
+  }
   const [showCheatConfirm, setShowCheatConfirm] = useState(false);
   const [reward, setReward] = useState(null);
   const [reaction, setReaction] = useState("");
@@ -85,12 +106,6 @@ export default function Game({
   const [chatMessages, setChatMessages] = useState([]);
   const [chatText, setChatText] = useState("");
   const [chatUnread, setChatUnread] = useState(false);
-
-  // Responsive tepsi modu render/effect'lerden önce hesaplanmalı;
-  // aksi halde useEffect dependency array'inde TDZ (before initialization) oluşur.
-  const isLandscape = viewport.width > viewport.height;
-  const sideTrayMode = isLandscape && viewport.width >= 600;
-  const trayPieceWidth = Math.max(64, Math.min(96, Math.round((room?.boardW || 720) / Math.max(6, room?.cols || 10))));
 
   const startedAtRef = useRef(null);
 
@@ -731,6 +746,7 @@ export default function Game({
     right.innerHTML = "";
     const keys = getRandomizedTrayKeys();
     const half = Math.ceil(keys.length / 2);
+    const metrics = getTrayMetrics(keys.length);
 
     keys.forEach((key, index) => {
       const p = piecesRef.current[key];
@@ -740,8 +756,8 @@ export default function Game({
       holder.className = "side-tray-piece";
       holder.dataset.pieceKey = key;
       holder.appendChild(pc);
-      pc.style.width = `${trayPieceWidth + PAD * 2}px`;
-      pc.style.height = `${Math.round((pc.height / pc.width) * (trayPieceWidth + PAD * 2))}px`;
+      pc.style.width = `${metrics.pieceWidth}px`;
+      pc.style.height = "auto";
       pc.style.maxWidth = "100%";
       pc.style.touchAction = "none";
       pc.style.userSelect = "none";
@@ -957,6 +973,9 @@ export default function Game({
     return () => clearInterval(timer);
   }, [room, finished]);
 
+  const trayMetrics = getTrayMetrics(room?.rows && room?.cols ? room.rows * room.cols : 1);
+  const trayPieceWidth = trayMetrics.pieceWidth;
+
   function getRandomizedTrayKeys() {
     const keys = Object.keys(piecesRef.current).filter((k) => k !== "__ghost");
     return [...keys].sort((a, b) => {
@@ -979,13 +998,13 @@ export default function Game({
     const half = Math.ceil(keys.length / 2);
     const left = index < half;
     const localIndex = left ? index : index - half;
-    const columns = Math.max(1, Math.floor(220 / trayPieceWidth));
-    const col = localIndex % columns;
-    const row = Math.floor(localIndex / columns);
+    const metrics = getTrayMetrics(keys.length);
+    const col = localIndex % metrics.columns;
+    const row = Math.floor(localIndex / metrics.columns);
     return {
       left,
-      x: 10 + col * trayPieceWidth,
-      y: 38 + row * (Math.max(58, Math.min(92, room.boardH / Math.max(4, room.rows))) + 8),
+      x: 8 + col * (metrics.pieceWidth + metrics.gap),
+      y: 38 + row * (Math.max(28, Math.round(metrics.pieceWidth / Math.max(0.55, room.boardW / room.boardH))) + metrics.gap),
     };
   }
 
@@ -1346,13 +1365,12 @@ export default function Game({
     if (!p || p.placed || !canvas) return;
     const pieceW = room.boardW / room.cols;
     const pieceH = room.boardH / room.rows;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX;
-    const py = (e.clientY - rect.top) * scaleY;
-    p.x = Math.max(0, Math.min(room.boardW - pieceW, px - pieceW / 2));
-    p.y = Math.max(0, Math.min(room.boardH - pieceH, py - pieceH / 2));
+    // Parça tepsiden alınırken başlangıç konumunu tepsinin koordinatına göre
+    // hesaplamıyoruz. İlk hareketten itibaren imleç/parmak puzzle üzerinde
+    // nerede ise parça orayı takip ediyor; böylece yan tepsiden çıkan parça
+    // ekranın kenarına sıçramıyor.
+    p.x = Math.max(0, (room.boardW - pieceW) / 2);
+    p.y = Math.max(0, (room.boardH - pieceH) / 2);
     draggingRef.current = { key, offsetX: pieceW / 2, offsetY: pieceH / 2 };
     setSelectedPieceKey(key);
     zCounterRef.current += 1;
@@ -1974,7 +1992,13 @@ export default function Game({
   const canvasHeight = sideTrayMode
     ? room.boardH
     : trayTop + trayRows * pieceH * 1.22 + pieceH * 2;
-  const canvasCssWidth = Math.max(260, Math.min(1400, 900 * zoom, sideTrayMode ? viewport.width - 324 : viewport.width - 20));
+  const sideAvailableWidth = Math.max(280, viewport.width - sideTrayWidth * 2 - 48);
+  const sideAvailableHeight = Math.max(260, viewport.height - 245);
+  const fitWidthByHeight = sideAvailableHeight * (canvasWidth / canvasHeight);
+  const fittedBoardWidth = sideTrayMode
+    ? Math.min(sideAvailableWidth, fitWidthByHeight)
+    : Math.min(1400, viewport.width - 20);
+  const canvasCssWidth = Math.max(260, Math.round(Math.min(1400, fittedBoardWidth * zoom)));
   const canvasCssHeight = canvasHeight * (canvasCssWidth / canvasWidth);
 
   const total =
@@ -2162,8 +2186,23 @@ export default function Game({
         <div className="tool-group"><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.1).toFixed(2)))}>−</button><span className="zoom-label">{Math.round(zoom * 100)}%</span><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button><button className="btn tiny ghost" onClick={() => setZoom(1)}>Sığdır</button></div><div className="reaction-group">{["Bulduğum!", "Yaklaştım", "Tamamdır"].map((r) => <button key={r} className="btn tiny ghost" onClick={async () => { setReaction(r); window.clearTimeout(window.__reactionTimer); window.__reactionTimer = window.setTimeout(() => setReaction(""), 1400); await set(ref(db, `rooms/${roomCode}/reactions/${playerId}`), { text: r, name: me?.name || "Sen", at: Date.now() }); }}>{r}</button>)}</div>
       </div>
 
-      <div className={`game-board-layout ${sideTrayMode ? "side-tray-layout" : "bottom-tray-layout"}`}>
-        {sideTrayMode && <div ref={leftTrayRef} className="side-tray side-tray-left" aria-label="Sol parça alanı" />}
+      <div
+        className={`game-board-layout ${sideTrayMode ? "side-tray-layout" : "bottom-tray-layout"}`}
+        style={{ "--side-tray-width": `${sideTrayWidth}px` }}
+      >
+        {sideTrayMode && (
+          <div
+            ref={leftTrayRef}
+            className={`side-tray side-tray-left ${total <= 100 ? "side-tray-fit" : "side-tray-scroll"}`}
+            style={{
+              flexBasis: `${sideTrayWidth}px`,
+              maxWidth: `${sideTrayWidth}px`,
+              gridTemplateColumns: `repeat(${trayMetrics.columns}, minmax(0, 1fr))`,
+              overflowY: total <= 100 ? "hidden" : "auto",
+            }}
+            aria-label="Sol parça alanı"
+          />
+        )}
         <div
           className="canvas-wrap"
           style={{
@@ -2211,7 +2250,19 @@ export default function Game({
           onContextMenu={(e) => e.preventDefault()}
         />
         </div>
-        {sideTrayMode && <div ref={rightTrayRef} className="side-tray side-tray-right" aria-label="Sağ parça alanı" />}
+        {sideTrayMode && (
+          <div
+            ref={rightTrayRef}
+            className={`side-tray side-tray-right ${total <= 100 ? "side-tray-fit" : "side-tray-scroll"}`}
+            style={{
+              flexBasis: `${sideTrayWidth}px`,
+              maxWidth: `${sideTrayWidth}px`,
+              gridTemplateColumns: `repeat(${trayMetrics.columns}, minmax(0, 1fr))`,
+              overflowY: total <= 100 ? "hidden" : "auto",
+            }}
+            aria-label="Sağ parça alanı"
+          />
+        )}
       </div>
 
       <p className="hint">
