@@ -651,19 +651,15 @@ export default function Game({
           ctx.save();
           ctx.clip();
 
-          // Her parçanın çıkıntıları da fotoğrafla dolsun diye hücrenin
-          // çevresindeki görüntüyü PAD kadar geniş kesiyoruz.
-          // Böylece parçalar arasında beyaz/şeffaf boşluk görünmez.
+          // Fotoğrafı puzzle tahtasıyla aynı (boardW x boardH) koordinat
+          // sisteminde kullanıyoruz. Eski kod img.width/img.height ile
+          // boardW/boardH koordinatlarını karıştırdığı için göz, burun gibi
+          // detaylar parça sınırlarında kaymış görünüyordu.
+          // ghost zaten boardW x boardH olarak normalize edildi.
           ctx.drawImage(
-            img,
-            Math.max(0, c * pieceW - PAD),
-            Math.max(0, r * pieceH - PAD),
-            Math.min(img.width - Math.max(0, c * pieceW - PAD), pieceW + PAD * 2),
-            Math.min(img.height - Math.max(0, r * pieceH - PAD), pieceH + PAD * 2),
-            c === 0 ? PAD : 0,
-            r === 0 ? PAD : 0,
-            Math.min(pieceW + PAD * 2, img.width - Math.max(0, c * pieceW - PAD)),
-            Math.min(pieceH + PAD * 2, img.height - Math.max(0, r * pieceH - PAD))
+            ghost,
+            PAD - c * pieceW,
+            PAD - r * pieceH
           );
 
           ctx.restore();
