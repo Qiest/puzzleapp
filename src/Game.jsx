@@ -22,7 +22,7 @@ const PAD = 30;
 
 const COLORS = ["#ff6f9c", "#7c83fd"];
 const GHOST_OPACITY = 0.08;
-const FIREBASE_MOVE_INTERVAL = 50;
+const FIREBASE_MOVE_INTERVAL = 100;
 function totalPiecesForLayout(rows, cols) { return rows * cols; }
 
 
@@ -335,12 +335,7 @@ export default function Game({
             `rooms/${roomCode}/players/${playerId}`
           );
 
-        await onDisconnect(
-          playerRef
-        ).remove();
-
-        await onDisconnect(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).remove();
-
+        // Önce oyuncuyu kaydet; onDisconnect kayıt işlemini engellemesin.
         await set(
           playerRef,
           {
@@ -364,6 +359,9 @@ export default function Game({
               Date.now(),
           }
         );
+
+        await onDisconnect(playerRef).remove();
+        await onDisconnect(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).remove();
       } catch (error) {
         console.error(
           "Oyuncu kaydı hatası:",
@@ -1350,14 +1348,6 @@ export default function Game({
         canvas.setPointerCapture(
           e.pointerId
         );
-
-        // Parça tepsideki/statik görüntüsünden çıkarılmalı.
-        // Yoksa sürüklerken dynamic canvas hareket eder ama bırakınca
-        // static canvas eski tepsi konumunu tekrar gösterir.
-        staticDirtyRef.current = true;
-        dynamicDirtyRef.current = true;
-        dirtyRef.current = true;
-
         lastFirebaseWriteRef.current = Date.now();
         update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
           key,
@@ -1458,63 +1448,91 @@ export default function Game({
   }
 
   function handlePointerUp() {
-    const d = draggingRef.current;
+    const d =
+      draggingRef.current;
+
     if (!d || !room) return;
 
     draggingRef.current = null;
 
-    const { cols, boardW, boardH, rows } = room;
-    const pieceW = boardW / cols;
-    const pieceH = boardH / rows;
+    const {
+      cols,
+      boardW,
+      boardH,
+    } = room;
 
-    const [r, c] = d.key.split("_").map(Number);
-    const correctX = c * pieceW;
-    const correctY = r * pieceH;
-    const p = piecesRef.current[d.key];
+    const pieceW =
+      boardW / cols;
+
+    const pieceH =
+      boardH / room.rows;
+
+    const [r, c] =
+      d.key
+        .split("_")
+        .map(Number);
+
+    const correctX =
+      c * pieceW;
+
+    const correctY =
+      r * pieceH;
+
+    const p =
+      piecesRef.current[d.key];
 
     if (!p) return;
 
-    // ÖNEMLİ:
-    // Parça doğru yerine yakınsa snap et.
-    // Değilse KESİNLİKLE eski/tray konumuna geri gönderme.
-    // Kullanıcının bıraktığı x/y kalıcı konumdur.
-    const centerDx = Math.abs(
-      (p.x + pieceW / 2) - (correctX + pieceW / 2)
-    );
-    const centerDy = Math.abs(
-      (p.y + pieceH / 2) - (correctY + pieceH / 2)
-    );
+    const threshold =
+      Math.min(
+        pieceW,
+        pieceH
+      ) * 0.4;
 
-    const thresholdX = pieceW * 0.55;
-    const thresholdY = pieceH * 0.55;
+    const dx =
+      Math.abs(
+        p.x - correctX
+      );
 
-    const placed =
+    const dy =
+      Math.abs(
+        p.y - correctY
+      );
+
+    let placed = false;
+
+    if (
       (Number(p.rotation) || 0) === 0 &&
-      centerDx <= thresholdX &&
-      centerDy <= thresholdY;
-
-    if (placed) {
+      dx < threshold &&
+      dy < threshold
+    ) {
       p.x = correctX;
       p.y = correctY;
+      placed = true;
     }
 
-    const now = Date.now();
+    const now =
+      Date.now();
 
     p.placed = placed;
-    p.placedBy = placed ? playerId : null;
-    p.movedBy = playerId;
-    p.movedAt = now;
+    p.placedBy =
+      placed
+        ? playerId
+        : null;
+    p.movedBy =
+      playerId;
+    p.movedAt =
+      now;
 
-    // Statik katman artık parçanın YENİ konumunu çizmeli.
-    staticDirtyRef.current = true;
-    dynamicDirtyRef.current = true;
     dirtyRef.current = true;
 
     updateProgress();
 
-    // Bırakılan konumu her durumda kalıcı olarak kaydet.
     update(
-      ref(db, `rooms/${roomCode}/pieces/${d.key}`),
+      ref(
+        db,
+        `rooms/${roomCode}/pieces/${d.key}`
+      ),
       {
         x: Math.round(p.x),
         y: Math.round(p.y),
@@ -1524,12 +1542,13 @@ export default function Game({
         movedAt: now,
       }
     ).catch((error) => {
-      console.error("Parça bırakma hatası:", error);
+      console.error(
+        "Parça bırakma hatası:",
+        error
+      );
     });
 
-    remove(
-      ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)
-    ).catch(() => {});
+    remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
   }
 
   function findMissingPiece() {
