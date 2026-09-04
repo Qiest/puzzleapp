@@ -8,6 +8,12 @@ import { onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [room, setRoom] = useState(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("puzzleTheme") || "light");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("puzzleTheme", theme);
+  }, [theme]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -75,6 +81,7 @@ export default function App() {
         playerName={room.playerNameOverride || playerName}
         isGuest={user.isAnonymous}
         pendingJoin={!!room.pendingJoin}
+        theme={theme}
         onLeave={async () => {
           window.history.replaceState({}, "", window.location.pathname);
           setRoom(null);
@@ -94,6 +101,8 @@ export default function App() {
       playerId={playerId}
       user={user}
       playerName={playerName}
+      theme={theme}
+      onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
       onEnterRoom={(code, name, pendingJoin = false) => {
         setRoom({
           code,

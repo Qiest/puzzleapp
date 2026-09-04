@@ -139,3 +139,34 @@ html,body{overscroll-behavior:none}@media(max-width:720px){.home-card{padding:25
 .top-nav{flex-wrap:wrap}.top-brand-status{min-width:0}.top-user-actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}
 .site-footer{margin-top:24px;padding:14px 0 2px;text-align:center;color:#9aa0b0;font-size:9px;letter-spacing:.08em}.site-footer strong{color:#6971bc;font-weight:800}
 @media(max-width:600px){.top-nav{gap:8px}.top-brand-status{flex:1}.top-user-actions{gap:7px}.site-footer{margin-top:20px}}
+
+/* Dark theme */
+html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="dark"] body{background:#0a0a0b;color:#f4f5f8}
+html[data-theme="dark"] .auth-page,html[data-theme="dark"] .home-shell{background:radial-gradient(circle at 8% 8%,rgba(237,113,158,.10),transparent 25%),radial-gradient(circle at 92% 10%,rgba(91,112,232,.12),transparent 27%),#0a0a0b}
+html[data-theme="dark"] .auth-card,html[data-theme="dark"] .home-card{background:#151619;border-color:#292b31;box-shadow:0 24px 80px rgba(0,0,0,.42)}
+html[data-theme="dark"] .subtitle,html[data-theme="dark"] .auth-subtitle,html[data-theme="dark"] .muted,html[data-theme="dark"] .field>span,html[data-theme="dark"] .auth-form label span{color:#aeb3c0}
+html[data-theme="dark"] .account-strip,html[data-theme="dark"] .big-choice,html[data-theme="dark"] .difficulty,html[data-theme="dark"] .upload-zone,html[data-theme="dark"] .difficulty-info,html[data-theme="dark"] .progress-row,html[data-theme="dark"] .room-badge,html[data-theme="dark"] .stat-badge,html[data-theme="dark"] .btn.ghost{background:#1b1d21;color:#f1f3f7;border-color:#30333b}
+html[data-theme="dark"] .field input,html[data-theme="dark"] .auth-form input,html[data-theme="dark"] .social-search input{background:#101114;color:#f4f5f8;border-color:#343741}
+html[data-theme="dark"] .difficulty.active{background:#1c2030;border-color:#6476e8}
+html[data-theme="dark"] .btn.secondary{background:#2a1b23;color:#f2a6c2;border-color:#63354b}
+html[data-theme="dark"] .game{background:#0a0a0b;color:#f4f5f8}
+html[data-theme="dark"] .game-tools .btn.ghost,html[data-theme="dark"] .game-header .btn.ghost{background:#17191d;color:#f7f8fb;border-color:#343741}
+html[data-theme="dark"] .hint{color:#9fa5b2}
+html[data-theme="dark"] .reaction-toast,html[data-theme="dark"] .confirm-card,html[data-theme="dark"] .profile-card,html[data-theme="dark"] .premium-finish{background:#17191d;color:#f4f5f8;border-color:#30333b}
+html[data-theme="dark"] .confirm-card p,html[data-theme="dark"] .finish-copy{color:#aeb3c0}
+html[data-theme="dark"] .finish-stats div,html[data-theme="dark"] .level-line{background:#202228;border-color:#30333b}
+html[data-theme="dark"] .profile-close,html[data-theme="dark"] .drawer-close{background:#24262c;color:#c7cad3}
+html[data-theme="dark"] .home-dashboard,html[data-theme="dark"] .drawer-section,html[data-theme="dark"] .request-box,html[data-theme="dark"] .selected-profile-card,html[data-theme="dark"] .chat-panel,html[data-theme="dark"] .settings-modal,html[data-theme="dark"] .profile-drawer{background:#151619;border-color:#2c2f36;color:#f4f5f8}
+html[data-theme="dark"] .home-stat-strip,html[data-theme="dark"] .social-result,html[data-theme="dark"] .friend-row,html[data-theme="dark"] .settings-option{border-color:#2d3037}
+html[data-theme="dark"] .notification-modal,html[data-theme="dark"] .notification-card{background:#151619;color:#f4f5f8;border-color:#30333b}
+html[data-theme="dark"] .notification-copy span,html[data-theme="dark"] .friend-main span,html[data-theme="dark"] .social-empty{color:#9fa5b2}
+
+/* Completed puzzle history */
+.history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.history-card{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:#fafbfe}
+.history-card img,.history-image-placeholder{width:100%;aspect-ratio:16/9;display:block;object-fit:cover}
+.history-image-placeholder{display:grid;place-items:center;background:linear-gradient(135deg,#eef1ff,#fff0f6);color:var(--blue);font-size:11px;font-weight:900;letter-spacing:.12em}
+.history-card-copy{padding:9px 10px;display:grid;gap:3px}.history-card-copy strong{font-size:12px}.history-card-copy span,.history-card-copy small{font-size:10px;color:var(--muted)}
+html[data-theme="dark"] .history-card{background:#1b1d21;border-color:#30333b}.theme-option{margin-top:10px}
+@media(max-width:520px){.history-grid{grid-template-columns:1fr}.history-card-copy{padding:8px}}

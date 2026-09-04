@@ -1,4 +1,4 @@
-import { ref, get, set, update, onValue, onDisconnect, onChildAdded, onChildChanged, off } from "firebase/database";
+import { ref, get, set, update, remove, onValue, onDisconnect, onChildAdded, onChildChanged, off } from "firebase/database";
 import { db } from "./firebase.js";
 import React, {
   useEffect,
@@ -33,6 +33,7 @@ export default function Game({
   isGuest = false,
   pendingJoin,
   onLeave,
+  theme = "light",
 }) {
   const [needsName, setNeedsName] =
     useState(
@@ -87,6 +88,10 @@ export default function Game({
   const canvasRef =
     useRef(null);
 
+  // Static katman: hareket etmeyen parçalar ve tahta/tepsi arka planı.
+  // Dynamic katman: yalnızca o anda hareket eden parçalar + highlight.
+  const staticCanvasRef = useRef(null);
+
   const piecesRef =
     useRef({});
 
@@ -102,6 +107,8 @@ export default function Game({
   const draggingRef =
     useRef(null);
 
+  const remoteLiveMovesRef = useRef({});
+
   const lastFirebaseWriteRef =
     useRef(0);
 
@@ -110,6 +117,10 @@ export default function Game({
 
   const dirtyRef =
     useRef(true);
+
+  const staticDirtyRef = useRef(true);
+  const dynamicDirtyRef = useRef(true);
+  const dynamicBoundsRef = useRef([]);
 
   const highlightRef =
     useRef({
@@ -149,6 +160,9 @@ export default function Game({
         pieces: total,
         time: elapsed,
         difficulty: room.difficultyName || "Klasik",
+        imageUrl: room.image || "",
+        partnerUid: Object.keys(players || {}).find((id) => id !== playerId) || null,
+        partnerName: Object.values(players || {}).find((p) => p?.connected)?.name || null,
         completedAt: Date.now(),
       });
 
@@ -324,6 +338,8 @@ export default function Game({
         await onDisconnect(
           playerRef
         ).remove();
+
+        await onDisconnect(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).remove();
 
         await set(
           playerRef,
@@ -679,6 +695,8 @@ export default function Game({
       }
 
       dirtyRef.current = true;
+      staticDirtyRef.current = true;
+      dynamicDirtyRef.current = true;
     };
 
     img.src = image;
@@ -698,7 +716,7 @@ export default function Game({
       if (!latest) return;
 
       const age = Date.now() - Number(latest.at || 0);
-      if (age > 2500) return;
+      if (age > 5000) return;
 
       setPartnerReaction({
         name: latest.name || "Diğer oyuncu",
@@ -709,7 +727,7 @@ export default function Game({
       window.clearTimeout(window.__partnerReactionTimer);
       window.__partnerReactionTimer = window.setTimeout(() => {
         setPartnerReaction(null);
-      }, Math.max(300, 2500 - age));
+      }, Math.max(500, 5000 - age));
     });
 
     return () => {
@@ -767,6 +785,8 @@ export default function Game({
       }
 
       dirtyRef.current = true;
+      staticDirtyRef.current = true;
+      dynamicDirtyRef.current = true;
       updateProgress();
     };
 
@@ -805,6 +825,78 @@ export default function Game({
   ]);
 
   useEffect(() => {
+    if (!room) return;
+    const liveRef = ref(db, `rooms/${roomCode}/liveMoves`);
+    const unsubscribe = onValue(liveRef, (snap) => {
+      const all = snap.val() || {};
+      let remoteSetChanged = false;
+
+      Object.entries(all).forEach(([uid, move]) => {
+        if (uid === playerId || !move?.key) return;
+
+        const previous = remoteLiveMovesRef.current[uid];
+        if (!previous || previous.key !== move.key) {
+          remoteSetChanged = true;
+        }
+
+        remoteLiveMovesRef.current[uid] = move;
+      });
+
+      Object.keys(remoteLiveMovesRef.current).forEach((uid) => {
+        if (!all[uid]) {
+          delete remoteLiveMovesRef.current[uid];
+          remoteSetChanged = true;
+        }
+      });
+
+      dirtyRef.current = true;
+      dynamicDirtyRef.current = true;
+
+      // Sadece remote oyuncu drag'e başladı/bittiğinde static katmanda o
+      // parçayı çıkarıp/geri eklememiz gerekiyor. Pozisyon değişimlerinde
+      // static canvası tekrar çizmiyoruz.
+      if (remoteSetChanged) {
+        staticDirtyRef.current = true;
+      }
+    });
+    return () => {
+      unsubscribe?.();
+      remoteLiveMovesRef.current = {};
+    };
+  }, [room, roomCode, playerId]);
+
+  useEffect(() => {
+    if (!room) return;
+    let raf;
+    const animateRemote = () => {
+      let moved = false;
+      Object.values(remoteLiveMovesRef.current).forEach((move) => {
+        const p = piecesRef.current[move.key];
+        if (!p || p.placed) return;
+        const targetX = Number(move.x);
+        const targetY = Number(move.y);
+        if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
+        const dx = targetX - p.x;
+        const dy = targetY - p.y;
+        if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
+          p.x += dx * 0.42;
+          p.y += dy * 0.42;
+          moved = true;
+        } else {
+          p.x = targetX; p.y = targetY;
+        }
+      });
+      if (moved) {
+        dirtyRef.current = true;
+        dynamicDirtyRef.current = true;
+      }
+      raf = requestAnimationFrame(animateRemote);
+    };
+    raf = requestAnimationFrame(animateRemote);
+    return () => cancelAnimationFrame(raf);
+  }, [room]);
+
+  useEffect(() => {
     if (!room || finished) return;
     const timer = setInterval(() => {
       if (startedAtRef.current) setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
@@ -826,6 +918,8 @@ export default function Game({
     p.rotation = ((Number(p.rotation) || 0) + 90) % 360;
     setSelectedPieceKey(key);
     dirtyRef.current = true;
+    staticDirtyRef.current = true;
+    dynamicDirtyRef.current = true;
 
     update(
       ref(db, `rooms/${roomCode}/pieces/${key}`),
@@ -890,211 +984,273 @@ export default function Game({
   useEffect(() => {
     let raf;
 
-    function draw() {
-      raf =
-        requestAnimationFrame(draw);
+    const getDynamicKeys = () => {
+      const keys = new Set();
 
-      if (
-        !dirtyRef.current ||
-        !room
-      ) {
-        return;
+      if (draggingRef.current?.key) {
+        keys.add(draggingRef.current.key);
       }
 
-      dirtyRef.current = false;
+      Object.values(remoteLiveMovesRef.current).forEach((move) => {
+        if (move?.key) keys.add(move.key);
+      });
 
-      const canvas =
-        canvasRef.current;
+      return keys;
+    };
 
-      if (!canvas) return;
+    const getPieceBounds = (p, pieceW, pieceH) => {
+      if (!p) return null;
 
-      const ctx =
-        canvas.getContext(
-          "2d"
+      const rotation = Number(p.rotation) || 0;
+      const angle = Math.abs((rotation % 360) * Math.PI / 180);
+      const extraX = rotation % 180 === 0
+        ? 0
+        : Math.abs(pieceW * Math.cos(angle)) / 2 + Math.abs(pieceH * Math.sin(angle)) / 2 - pieceW / 2;
+      const extraY = rotation % 180 === 0
+        ? 0
+        : Math.abs(pieceW * Math.sin(angle)) / 2 + Math.abs(pieceH * Math.cos(angle)) / 2 - pieceH / 2;
+
+      return {
+        x: p.x - PAD - Math.max(0, extraX) - 4,
+        y: p.y - PAD - Math.max(0, extraY) - 4,
+        w: pieceW + PAD * 2 + Math.max(0, extraX) * 2 + 8,
+        h: pieceH + PAD * 2 + Math.max(0, extraY) * 2 + 8,
+      };
+    };
+
+    function drawPiece(ctx, key, p, pieceW, pieceH, showHighlight = false) {
+      const bmp = pieceCanvasesRef.current[key];
+      if (!p || !bmp) return;
+
+      ctx.save();
+
+      if (p.placed) {
+        ctx.shadowColor = "rgba(120,90,100,0.18)";
+        ctx.shadowBlur = 2;
+      } else {
+        ctx.shadowColor = "rgba(0,0,0,0.18)";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+      }
+
+      const rotation = Number(p.rotation) || 0;
+
+      if (rotation) {
+        ctx.translate(p.x + pieceW / 2, p.y + pieceH / 2);
+        ctx.rotate(rotation * Math.PI / 180);
+        ctx.drawImage(bmp, -pieceW / 2 - PAD, -pieceH / 2 - PAD);
+      } else {
+        ctx.drawImage(bmp, p.x - PAD, p.y - PAD);
+      }
+
+      ctx.restore();
+
+      if (showHighlight) {
+        ctx.save();
+        ctx.strokeStyle = "#ffd166";
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = 0.85;
+        ctx.strokeRect(
+          p.x - PAD * 0.6,
+          p.y - PAD * 0.6,
+          pieceW + PAD * 1.2,
+          pieceH + PAD * 1.2
         );
+        ctx.restore();
+      }
+    }
 
-      const {
-        boardW,
-        boardH,
-        rows,
-        cols,
-      } = room;
+    function drawStatic() {
+      const canvas = staticCanvasRef.current;
+      if (!canvas || !room) return;
 
-      ctx.clearRect(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-      ctx.fillStyle =
-        "#fff5f7";
+      const { boardW, boardH, rows, cols } = room;
+      const isDark =
+        document.documentElement.dataset.theme === "dark" ||
+        theme === "dark";
 
-      roundRect(
-        ctx,
-        0,
-        0,
-        boardW,
-        boardH,
-        18
-      );
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Tahta
+      ctx.fillStyle = isDark ? "#000000" : "#fff5f7";
+      roundRect(ctx, 0, 0, boardW, boardH, 18);
       ctx.fill();
 
-      const ghost =
-        pieceCanvasesRef.current
-          .__ghost;
-
-      if (ghost && (room.previewAllowed !== false) && showPreview) {
+      // Önizleme yalnızca istenince static katmanda çizilir.
+      const ghost = pieceCanvasesRef.current.__ghost;
+      if (ghost && room.previewAllowed !== false && showPreview) {
         ctx.save();
-
-        ctx.globalAlpha =
-          GHOST_OPACITY;
-
-        roundRect(
-          ctx,
-          0,
-          0,
-          boardW,
-          boardH,
-          18
-        );
-
+        ctx.globalAlpha = GHOST_OPACITY;
+        roundRect(ctx, 0, 0, boardW, boardH, 18);
         ctx.clip();
-
-        ctx.drawImage(
-          ghost,
-          0,
-          0
-        );
-
+        ctx.drawImage(ghost, 0, 0);
         ctx.restore();
       }
 
-      ctx.strokeStyle =
-        "rgba(255,111,156,0.28)";
-
+      ctx.strokeStyle = "rgba(255,111,156,0.28)";
       ctx.lineWidth = 2;
-
-      roundRect(
-        ctx,
-        1,
-        1,
-        boardW - 2,
-        boardH - 2,
-        18
-      );
-
+      roundRect(ctx, 1, 1, boardW - 2, boardH - 2, 18);
       ctx.stroke();
 
-      const trayTop =
-        boardH + 50;
-
-      ctx.fillStyle =
-        "#faf3f6";
-
+      // Tepsi
+      const trayTop = boardH + 50;
+      ctx.fillStyle = isDark ? "#090909" : "#faf3f6";
       roundRect(
         ctx,
         0,
         trayTop,
         boardW,
-        canvas.height -
-          trayTop -
-          10,
+        canvas.height - trayTop - 10,
         18
       );
-
       ctx.fill();
 
-      const pieceW =
-        boardW / cols;
+      const pieceW = boardW / cols;
+      const pieceH = boardH / rows;
+      const dynamicKeys = getDynamicKeys();
 
-      const pieceH =
-        boardH / rows;
-
-      const keys =
-        Object.keys(
-          pieceCanvasesRef.current
-        ).filter(
-          (k) =>
-            k !== "__ghost"
+      const keys = Object.keys(pieceCanvasesRef.current)
+        .filter((k) => k !== "__ghost")
+        .sort(
+          (a, b) =>
+            (zOrderRef.current[a] || 0) -
+            (zOrderRef.current[b] || 0)
         );
 
-      keys.sort(
-        (a, b) =>
-          (zOrderRef.current[a] || 0) -
-          (zOrderRef.current[b] || 0)
-      );
+      for (const key of keys) {
+        if (dynamicKeys.has(key)) continue;
 
-      for (
-        const key of keys
-      ) {
-        const p =
-          piecesRef.current[key];
-
+        const p = piecesRef.current[key];
         if (!p) continue;
 
-        const bmp =
-          pieceCanvasesRef.current[key];
+        drawPiece(ctx, key, p, pieceW, pieceH, false);
+      }
 
-        if (!bmp) continue;
+      staticDirtyRef.current = false;
+    }
 
-        ctx.save();
+    function drawDynamic() {
+      const canvas = canvasRef.current;
+      if (!canvas || !room) return;
 
-        if (p.placed) {
-          ctx.shadowColor =
-            "rgba(120,90,100,0.18)";
-          ctx.shadowBlur = 2;
-        } else {
-          ctx.shadowColor =
-            "rgba(0,0,0,0.18)";
-          ctx.shadowBlur = 4;
-          ctx.shadowOffsetY = 1;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const { boardW, boardH, rows, cols } = room;
+      const pieceW = boardW / cols;
+      const pieceH = boardH / rows;
+
+      // Dynamic canvas transparandır. Önceki hareketli bölgeleri temizleyerek
+      // alttaki static canvası tekrar görünür hale getiriyoruz.
+      const oldBounds = dynamicBoundsRef.current;
+      for (const b of oldBounds) {
+        if (!b) continue;
+        ctx.clearRect(b.x, b.y, b.w, b.h);
+      }
+
+      const nextBounds = [];
+      const dynamicKeys = getDynamicKeys();
+
+      dynamicKeys.forEach((key) => {
+        const move = Object.values(remoteLiveMovesRef.current).find(
+          (m) => m?.key === key
+        );
+        const p = piecesRef.current[key];
+
+        if (!p) return;
+
+        let drawPieceState = p;
+
+        // Remote oyuncunun canlı pozisyonu, durable state'i değiştirmeden
+        // yalnızca dynamic katmanda gösterilir.
+        if (move && draggingRef.current?.key !== key) {
+          drawPieceState = {
+            ...p,
+            x: Number(move.x),
+            y: Number(move.y),
+          };
         }
 
-        const rotation = Number(p.rotation) || 0;
-        if (rotation) {
-          ctx.translate(p.x + pieceW / 2, p.y + pieceH / 2);
-          ctx.rotate(rotation * Math.PI / 180);
-          ctx.drawImage(bmp, -pieceW / 2 - PAD, -pieceH / 2 - PAD);
-        } else {
-          ctx.drawImage(bmp, p.x - PAD, p.y - PAD);
+        if (!Number.isFinite(drawPieceState.x) || !Number.isFinite(drawPieceState.y)) {
+          return;
         }
 
-        ctx.restore();
-
-        if (
+        const highlight =
           highlightRef.current.key === key &&
-          Date.now() <
-            highlightRef.current.until
-        ) {
-          ctx.save();
+          Date.now() < highlightRef.current.until;
 
+        drawPiece(
+          ctx,
+          key,
+          drawPieceState,
+          pieceW,
+          pieceH,
+          highlight
+        );
+
+        const bounds = getPieceBounds(drawPieceState, pieceW, pieceH);
+        if (bounds) nextBounds.push(bounds);
+      });
+
+      // Hint edilen parça hareket etmiyorsa da sadece highlight çiz.
+      const highlightKey = highlightRef.current.key;
+      if (
+        highlightKey &&
+        !dynamicKeys.has(highlightKey) &&
+        Date.now() < highlightRef.current.until
+      ) {
+        const p = piecesRef.current[highlightKey];
+        if (p) {
+          ctx.save();
           ctx.strokeStyle = "#ffd166";
           ctx.lineWidth = 3;
           ctx.globalAlpha = 0.85;
-
           ctx.strokeRect(
             p.x - PAD * 0.6,
             p.y - PAD * 0.6,
             pieceW + PAD * 1.2,
             pieceH + PAD * 1.2
           );
-
           ctx.restore();
 
-          dirtyRef.current = true;
+          const bounds = getPieceBounds(p, pieceW, pieceH);
+          if (bounds) nextBounds.push(bounds);
         }
       }
+
+      dynamicBoundsRef.current = nextBounds;
+      dynamicDirtyRef.current = false;
+
+      // Highlight süresi dolana kadar yeni frame istemeye gerek yok; timeout
+      // dirty flag'i zaten tekrar açıyor.
+    }
+
+    function draw() {
+      raf = requestAnimationFrame(draw);
+
+      if (!room) return;
+
+      if (staticDirtyRef.current) {
+        drawStatic();
+      }
+
+      if (dynamicDirtyRef.current || staticDirtyRef.current) {
+        drawDynamic();
+      }
+
+      dirtyRef.current = false;
     }
 
     draw();
 
     return () => {
       cancelAnimationFrame(raf);
+      dynamicBoundsRef.current = [];
     };
-  }, [room, players, showPreview]);
-
+  }, [room, players, showPreview, theme]);
   function handlePointerDown(e) {
     if (e.button === 2) {
       e.preventDefault();
@@ -1194,6 +1350,13 @@ export default function Game({
         canvas.setPointerCapture(
           e.pointerId
         );
+        lastFirebaseWriteRef.current = Date.now();
+        update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), {
+          key,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          movedAt: Date.now(),
+        }).catch(() => {});
 
         break;
       }
@@ -1258,6 +1421,7 @@ export default function Game({
     );
 
     dirtyRef.current = true;
+    dynamicDirtyRef.current = true;
 
     const now =
       Date.now();
@@ -1269,24 +1433,6 @@ export default function Game({
     ) {
       lastFirebaseWriteRef.current =
         now;
-
-      update(
-        ref(
-          db,
-          `rooms/${roomCode}/pieces/${d.key}`
-        ),
-        {
-          x: Math.round(p.x),
-          y: Math.round(p.y),
-          movedBy: playerId,
-          movedAt: now,
-        }
-      ).catch((error) => {
-        console.error(
-          "Parça senkronizasyon hatası:",
-          error
-        );
-      });
 
       update(
         ref(
@@ -1404,19 +1550,7 @@ export default function Game({
       );
     });
 
-    update(
-      ref(
-        db,
-        `rooms/${roomCode}/liveMoves/${playerId}`
-      ),
-      {
-        key: d.key,
-        x: Math.round(p.x),
-        y: Math.round(p.y),
-        placed,
-        movedAt: now,
-      }
-    ).catch(() => {});
+    remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
   }
 
   function findMissingPiece() {
@@ -1444,6 +1578,7 @@ export default function Game({
     };
 
     dirtyRef.current = true;
+    dynamicDirtyRef.current = true;
 
     setToast("İşaretli parçaya bak.");
 
@@ -1451,6 +1586,7 @@ export default function Game({
     window.__missingPieceTimer = setTimeout(() => {
       highlightRef.current = { key: null, until: 0 };
       dirtyRef.current = true;
+      dynamicDirtyRef.current = true;
       setToast("");
     }, 2500);
   }
@@ -1594,6 +1730,22 @@ export default function Game({
     ctx.closePath();
   }
 
+  async function leaveRoom() {
+    if (!roomCode || !playerId) { onLeave?.(); return; }
+    try {
+      await remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`));
+      await remove(ref(db, `rooms/${roomCode}/players/${playerId}`));
+      const playersSnap = await get(ref(db, `rooms/${roomCode}/players`));
+      if (!playersSnap.exists() || Object.keys(playersSnap.val() || {}).length === 0) {
+        await remove(ref(db, `rooms/${roomCode}`));
+      }
+    } catch (error) {
+      console.error("Oda çıkış temizliği hatası:", error);
+    } finally {
+      onLeave?.();
+    }
+  }
+
   function copyInviteLink() {
     const url =
       `${window.location.origin}` +
@@ -1664,7 +1816,7 @@ export default function Game({
 
           <button
             className="btn primary"
-            onClick={onLeave}
+            onClick={leaveRoom}
           >
             Geri dön
           </button>
@@ -1877,30 +2029,49 @@ export default function Game({
         <div className="tool-group"><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.1).toFixed(2)))}>−</button><span className="zoom-label">{Math.round(zoom * 100)}%</span><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button><button className="btn tiny ghost" onClick={() => setZoom(1)}>Sığdır</button></div><div className="reaction-group">{["Bulduğum!", "Yaklaştım", "Tamamdır"].map((r) => <button key={r} className="btn tiny ghost" onClick={async () => { setReaction(r); window.clearTimeout(window.__reactionTimer); window.__reactionTimer = window.setTimeout(() => setReaction(""), 1400); await set(ref(db, `rooms/${roomCode}/reactions/${playerId}`), { text: r, name: me?.name || "Sen", at: Date.now() }); }}>{r}</button>)}</div>
       </div>
 
-      <div className="canvas-wrap">
+      <div
+        className="canvas-wrap"
+        style={{
+          position: "relative",
+          width: `${Math.min(1400, 900 * zoom)}px`,
+          height: `${canvasHeight * (Math.min(1400, 900 * zoom) / canvasWidth)}px`,
+          maxWidth: "none",
+        }}
+      >
+        <canvas
+          ref={staticCanvasRef}
+          width={canvasWidth}
+          height={canvasHeight}
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "block",
+            width: "100%",
+            height: "100%",
+            maxWidth: "none",
+            pointerEvents: "none",
+          }}
+        />
         <canvas
           ref={canvasRef}
           width={canvasWidth}
           height={canvasHeight}
           style={{
+            position: "absolute",
+            inset: 0,
             display: "block",
-            width: `${Math.min(1400, 900 * zoom)}px`,
-            height: "auto",
+            width: "100%",
+            height: "100%",
             maxWidth: "none",
             touchAction: "none",
             userSelect: "none",
             WebkitUserSelect: "none",
           }}
-          onPointerDown={
-            handlePointerDown
-          }
+          onPointerDown={handlePointerDown}
           onDoubleClick={handleDoubleClick}
-          onPointerMove={
-            handlePointerMove
-          }
-          onPointerUp={
-            handlePointerUp
-          }
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onContextMenu={(e) => e.preventDefault()}
         />
