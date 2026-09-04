@@ -82,6 +82,7 @@ export default function App() {
         isGuest={user.isAnonymous}
         pendingJoin={!!room.pendingJoin}
         theme={theme}
+        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
         onLeave={async () => {
           window.history.replaceState({}, "", window.location.pathname);
           setRoom(null);

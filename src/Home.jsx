@@ -159,7 +159,7 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
           }
           if (!cancelled) setFriends(friendProfiles);
         }
-        if (!cancelled) { setPuzzlesRemaining(normalized.puzzlesRemaining); setProfile(normalized); setProfileAvatar(normalized.avatar || ""); setEditName(normalized.name || ""); setProfileVisible(normalized.profileVisible !== false); setAllowFriendRequests(normalized.allowFriendRequests !== false); setAllowMessages(normalized.allowMessages !== false); }
+        if (!cancelled) { setPuzzlesRemaining(null); setProfile(normalized); setProfileAvatar(normalized.avatar || ""); setEditName(normalized.name || ""); setProfileVisible(normalized.profileVisible !== false); setAllowFriendRequests(normalized.allowFriendRequests !== false); setAllowMessages(normalized.allowMessages !== false); }
       } catch (e) {
         console.error("Hesap bilgisi yüklenemedi:", e);
         if (!cancelled) setPuzzlesRemaining(3);
@@ -685,7 +685,6 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
   async function handleCreate() {
     if (user?.isAnonymous) return setError("Misafir oyuncular puzzle oluşturamaz. Bir hesapla devam et.");
     if (!file) return setError("Önce bir fotoğraf seç.");
-    if (puzzlesRemaining !== null && puzzlesRemaining <= 0) return setError("Puzzle hakkın kalmadı.");
     setBusy(true); setError("");
     try {
       const { dataUrl, width, height } = await resizeImage(file);
@@ -721,19 +720,9 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
         image: imageUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,
-        createdAt: Date.now(),
-        players: {
-          [user.uid]: {
-            name: profile?.name || name.trim() || playerName || "Oyuncu",
-            connected: true,
-            joinedAt: Date.now(),
-          },
-        },
+        createdAt: Date.now(), players: {},
       });
       await set(ref(db, `rooms/${code}/pieces`), pieces);
-      const nextRemaining = Math.max(0, (Number(puzzlesRemaining) || 3) - 1);
-      await set(ref(db, `users/${user.uid}/puzzlesRemaining`), nextRemaining);
-      setPuzzlesRemaining(nextRemaining);
       window.__lastCreatedRoomCode = code;
       // Odanın açılması, davet yazısına bağlı kalmasın.
       // Bir arkadaş daveti Rules/bağlantı yüzünden reddedilse bile oda normal şekilde açılır.
@@ -782,16 +771,18 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
         <p className="subtitle">Fotoğrafını seç, kendi puzzle'ını oluştur ve başka biriyle aynı anda çöz.</p>
 
         <div className="top-nav">
-          <div className="top-brand-status"><span className="online-pulse"></span><span>{accountLoading ? "Hesap yükleniyor..." : `${puzzlesRemaining ?? 0} puzzle hakkı`}</span></div>
+          <div className="top-brand-status"><span className="online-pulse"></span><span>{accountLoading ? "Hesap yükleniyor..." : `Puzzle oluşturma açık`}</span></div>
           <div className="top-user-actions">
             <span className="top-user-name">{profile?.name || playerName || "Oyuncu"}</span>
             <button className="icon-profile-button" title="Profil" onClick={() => { setError(""); setProfileOpen(true); }}>
               {profileAvatar ? <img src={profileAvatar} alt="" /> : <span>{(playerName || "O").slice(0,1).toUpperCase()}</span>}
             </button>
-            <button className="theme-toggle-button" type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
-              <span className="theme-toggle-icon theme-toggle-moon" aria-hidden="true"></span>
-              <span className="theme-toggle-icon theme-toggle-sun" aria-hidden="true"></span>
-              <i className={theme === "dark" ? "is-dark" : "is-light"}></i>
+            <button className={`theme-toggle-button ${theme === "dark" ? "is-dark" : "is-light"}`} type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
+              <span className="theme-toggle-track" aria-hidden="true">
+                <svg className="theme-icon moon-icon" viewBox="0 0 24 24"><path d="M20 15.2A8.4 8.4 0 0 1 8.8 4a8.6 8.6 0 1 0 11.2 11.2Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <svg className="theme-icon sun-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M12 2.3v2.2M12 19.5v2.2M2.3 12h2.2M19.5 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                <i className="theme-toggle-knob" />
+              </span>
             </button>
             <button className="icon-notification-button" title="Bildirimler" onClick={() => {
                 setNotificationsOpen(v => {
@@ -845,7 +836,7 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
 </label>) : <small>Henüz arkadaşın yok. Puzzle'ı oluşturduktan sonra da davet linkini kullanabilirsin.</small>}
 </div></label>
           {error && <div className="error">{error}</div>}
-          <div className="row-buttons"><button className="btn ghost" onClick={() => setMode("choose")} disabled={busy}>Geri</button><button className="btn primary" disabled={busy || accountLoading || puzzlesRemaining === 0} onClick={handleCreate}>{busy ? "Hazırlanıyor..." : "Puzzle'ı oluştur"}</button></div>
+          <div className="row-buttons"><button className="btn ghost" onClick={() => setMode("choose")} disabled={busy}>Geri</button><button className="btn primary" disabled={busy || accountLoading} onClick={handleCreate}>{busy ? "Hazırlanıyor..." : "Puzzle'ı oluştur"}</button></div>
         </div>}
 
         {mode === "join" && <div className="create-flow"><div className="section-title"><span>01</span> Oda kodunu gir</div><label className="field"><span>Oda kodu</span><input value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} placeholder="ABC123" maxLength={8} disabled={busy}/></label><label className="field"><span>Adın</span><input value={name} onChange={e => setName(e.target.value)} placeholder="Oyuncu" disabled={busy}/></label>{error && <div className="error">{error}</div>}<div className="row-buttons"><button className="btn ghost" onClick={() => setMode("choose")} disabled={busy}>Geri</button><button className="btn primary" disabled={busy} onClick={handleJoin}>{busy ? "Bağlanıyor..." : "Odaya katıl"}</button></div></div>}

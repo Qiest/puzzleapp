@@ -2032,10 +2032,12 @@ export default function Game({
           <span className="stat-badge">{formatTime(elapsed)}</span>
           <span className="stat-badge">Yardım: {hintsLeft ?? 0}</span>
 
-          <button className="theme-toggle-button game-theme-toggle" type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
-            <span className="theme-toggle-icon theme-toggle-moon" aria-hidden="true"></span>
-            <span className="theme-toggle-icon theme-toggle-sun" aria-hidden="true"></span>
-            <i className={theme === "dark" ? "is-dark" : "is-light"}></i>
+          <button className={`theme-toggle-button game-theme-toggle ${theme === "dark" ? "is-dark" : "is-light"}`} type="button" onClick={onToggleTheme} title={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"} aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}>
+            <span className="theme-toggle-track" aria-hidden="true">
+              <svg className="theme-icon moon-icon" viewBox="0 0 24 24"><path d="M20 15.2A8.4 8.4 0 0 1 8.8 4a8.6 8.6 0 1 0 11.2 11.2Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <svg className="theme-icon sun-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M12 2.3v2.2M12 19.5v2.2M2.3 12h2.2M19.5 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+              <i className="theme-toggle-knob" />
+            </span>
           </button>
 
           <button

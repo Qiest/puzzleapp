@@ -159,6 +159,11 @@ html[data-theme="dark"] .finish-stats div,html[data-theme="dark"] .level-line{ba
 html[data-theme="dark"] .profile-close,html[data-theme="dark"] .drawer-close{background:#24262c;color:#c7cad3}
 html[data-theme="dark"] .home-dashboard,html[data-theme="dark"] .drawer-section,html[data-theme="dark"] .request-box,html[data-theme="dark"] .selected-profile-card,html[data-theme="dark"] .chat-panel,html[data-theme="dark"] .settings-modal,html[data-theme="dark"] .profile-drawer{background:#151619;border-color:#2c2f36;color:#f4f5f8}
 html[data-theme="dark"] .home-stat-strip,html[data-theme="dark"] .social-result,html[data-theme="dark"] .friend-row,html[data-theme="dark"] .settings-option{border-color:#2d3037}
+html[data-theme="dark"] .friend-invite-chip,html[data-theme="dark"] .mini-action{background:#1b1d21;color:#f1f3f7;border-color:#343741}
+html[data-theme="dark"] .friend-invite-chip.selected{background:linear-gradient(135deg,#22283d,#382531);border-color:#6476e8;color:#fff}
+html[data-theme="dark"] .friend-invite-chip input{background:#101114}
+html[data-theme="dark"] .social-result strong,html[data-theme="dark"] .friend-row strong{color:#f4f5f8}
+html[data-theme="dark"] .social-result span,html[data-theme="dark"] .friend-row span,html[data-theme="dark"] .social-message{color:#aeb3c0}
 html[data-theme="dark"] .notification-modal,html[data-theme="dark"] .notification-card{background:#151619;color:#f4f5f8;border-color:#30333b}
 html[data-theme="dark"] .notification-copy span,html[data-theme="dark"] .friend-main span,html[data-theme="dark"] .social-empty{color:#9fa5b2}
 
@@ -441,20 +446,14 @@ html[data-theme="dark"] .side-tray-right::before {
 }
 
 
-/* Compact sun / moon theme toggle */
-.theme-toggle-button{position:relative;width:54px;height:30px;flex:none;border:1px solid var(--line);border-radius:999px;background:#f4f6ff;box-shadow:0 5px 16px rgba(35,40,80,.10);padding:0;display:flex;align-items:center;justify-content:space-between;overflow:hidden;cursor:pointer}
-.theme-toggle-button .theme-toggle-icon{position:relative;z-index:2;width:15px;height:15px;display:block;opacity:.42;flex:none}
-.theme-toggle-moon{margin-left:7px;border:2px solid #626bd3;border-radius:50%}
-.theme-toggle-moon:after{content:"";position:absolute;width:15px;height:15px;left:4px;top:-3px;border-radius:50%;background:#f4f6ff}
-.theme-toggle-sun{margin-right:7px;border:2px solid #ef9b55;border-radius:50%}
-.theme-toggle-sun:before,.theme-toggle-sun:after{content:"";position:absolute;left:50%;top:50%;width:23px;height:2px;background:#ef9b55;transform:translate(-50%,-50%);box-shadow:0 -7px 0 #ef9b55,0 7px 0 #ef9b55;opacity:.65}
-.theme-toggle-sun:after{transform:translate(-50%,-50%) rotate(90deg)}
-.theme-toggle-button>i{position:absolute;z-index:1;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(30,35,70,.18);transition:transform .2s ease,background .2s ease}
-.theme-toggle-button>i.is-dark{transform:translateX(24px);background:#20232b}
-.theme-toggle-button .theme-toggle-moon{opacity:.9}.theme-toggle-button .theme-toggle-sun{opacity:.9}
+/* Clean sun / moon theme toggle */
+.theme-toggle-button{position:relative;width:58px;height:32px;flex:none;border:0;border-radius:999px;background:transparent;padding:0;cursor:pointer;appearance:none}
+.theme-toggle-track{position:absolute;inset:0;border:1px solid #d7dcef;border-radius:999px;background:#f5f7ff;box-shadow:0 5px 16px rgba(35,40,80,.10);display:block;overflow:hidden}
+.theme-icon{position:absolute;top:8px;width:16px;height:16px;z-index:2;display:block}
+.moon-icon{left:8px;color:#626bd3}.sun-icon{right:8px;color:#e39a48}
+.theme-toggle-knob{position:absolute;z-index:3;left:4px;top:4px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(30,35,70,.20);transition:transform .2s ease,background .2s ease}
+.theme-toggle-button.is-dark .theme-toggle-knob{transform:translateX(26px);background:#262934}
+.theme-toggle-button.is-dark .theme-toggle-track{background:#17191f;border-color:#343741}
+.theme-toggle-button.is-dark .moon-icon{color:#cfd4ff}.theme-toggle-button.is-dark .sun-icon{color:#f1bd74}
 .game-theme-toggle{margin-left:2px}
-html[data-theme="dark"] .theme-toggle-button{background:#17191e;border-color:#343741;box-shadow:0 6px 18px rgba(0,0,0,.28)}
-html[data-theme="dark"] .theme-toggle-moon:after{background:#17191e}
-html[data-theme="dark"] .theme-toggle-button>i{background:#f2f4ff}
-html[data-theme="dark"] .theme-toggle-button>i.is-dark{transform:translateX(24px);background:#f2f4ff}
-@media(max-width:720px){.theme-toggle-button{width:50px;height:29px}.game-theme-toggle{order:-1}.game-header .theme-toggle-button{margin-left:auto}}
+@media(max-width:720px){.theme-toggle-button{width:54px;height:30px}.theme-toggle-button.is-dark .theme-toggle-knob{transform:translateX(24px)}.game-theme-toggle{order:-1}.game-header .theme-toggle-button{margin-left:auto}}
