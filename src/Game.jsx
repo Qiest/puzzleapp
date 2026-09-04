@@ -73,6 +73,8 @@ export default function Game({
   const [elapsed, setElapsed] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  const [trayVersion, setTrayVersion] = useState(0);
   const [showCheatConfirm, setShowCheatConfirm] = useState(false);
   const [reward, setReward] = useState(null);
   const [reaction, setReaction] = useState("");
@@ -91,6 +93,8 @@ export default function Game({
   // Static katman: hareket etmeyen parçalar ve tahta/tepsi arka planı.
   // Dynamic katman: yalnızca o anda hareket eden parçalar + highlight.
   const staticCanvasRef = useRef(null);
+  const leftTrayRef = useRef(null);
+  const rightTrayRef = useRef(null);
 
   const piecesRef =
     useRef({});
@@ -263,6 +267,16 @@ export default function Game({
         }
       }
     }, [playerId, saveCompletionReward]);
+
+  useEffect(() => {
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (needsName) return;
@@ -651,15 +665,19 @@ export default function Game({
           ctx.save();
           ctx.clip();
 
-          // Fotoğrafı puzzle tahtasıyla aynı (boardW x boardH) koordinat
-          // sisteminde kullanıyoruz. Eski kod img.width/img.height ile
-          // boardW/boardH koordinatlarını karıştırdığı için göz, burun gibi
-          // detaylar parça sınırlarında kaymış görünüyordu.
-          // ghost zaten boardW x boardH olarak normalize edildi.
+          // Her parçanın çıkıntıları da fotoğrafla dolsun diye hücrenin
+          // çevresindeki görüntüyü PAD kadar geniş kesiyoruz.
+          // Böylece parçalar arasında beyaz/şeffaf boşluk görünmez.
           ctx.drawImage(
-            ghost,
-            PAD - c * pieceW,
-            PAD - r * pieceH
+            img,
+            Math.max(0, c * pieceW - PAD),
+            Math.max(0, r * pieceH - PAD),
+            Math.min(img.width - Math.max(0, c * pieceW - PAD), pieceW + PAD * 2),
+            Math.min(img.height - Math.max(0, r * pieceH - PAD), pieceH + PAD * 2),
+            c === 0 ? PAD : 0,
+            r === 0 ? PAD : 0,
+            Math.min(pieceW + PAD * 2, img.width - Math.max(0, c * pieceW - PAD)),
+            Math.min(pieceH + PAD * 2, img.height - Math.max(0, r * pieceH - PAD))
           );
 
           ctx.restore();
@@ -691,10 +709,43 @@ export default function Game({
       dirtyRef.current = true;
       staticDirtyRef.current = true;
       dynamicDirtyRef.current = true;
+      setTrayVersion(v => v + 1);
     };
 
     img.src = image;
   }, [room]);
+
+  useEffect(() => {
+    if (!sideTrayMode || !room || !leftTrayRef.current || !rightTrayRef.current) return;
+
+    const left = leftTrayRef.current;
+    const right = rightTrayRef.current;
+    left.innerHTML = "";
+    right.innerHTML = "";
+    const keys = getRandomizedTrayKeys();
+    const half = Math.ceil(keys.length / 2);
+
+    keys.forEach((key, index) => {
+      const p = piecesRef.current[key];
+      const pc = pieceCanvasesRef.current[key];
+      if (!p || !pc || p.placed || p.movedAt || selectedPieceKey === key) return;
+      const holder = document.createElement("div");
+      holder.className = "side-tray-piece";
+      holder.dataset.pieceKey = key;
+      holder.appendChild(pc);
+      pc.style.width = `${trayPieceWidth + PAD * 2}px`;
+      pc.style.height = `${Math.round((pc.height / pc.width) * (trayPieceWidth + PAD * 2))}px`;
+      pc.style.maxWidth = "100%";
+      pc.style.touchAction = "none";
+      pc.style.userSelect = "none";
+      holder.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTrayPointerDown(event, key);
+      });
+      (index < half ? left : right).appendChild(holder);
+    });
+  }, [sideTrayMode, room, trayVersion, selectedPieceKey, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!room) return;
@@ -781,6 +832,7 @@ export default function Game({
       dirtyRef.current = true;
       staticDirtyRef.current = true;
       dynamicDirtyRef.current = true;
+      setTrayVersion(v => v + 1);
       updateProgress();
     };
 
@@ -897,6 +949,42 @@ export default function Game({
     }, 1000);
     return () => clearInterval(timer);
   }, [room, finished]);
+
+  const isLandscape = viewport.width > viewport.height;
+  const sideTrayMode = isLandscape && viewport.width >= 600;
+  const trayPieceWidth = Math.max(64, Math.min(96, Math.round((room?.boardW || 720) / Math.max(6, room?.cols || 10))));
+
+  function getRandomizedTrayKeys() {
+    const keys = Object.keys(piecesRef.current).filter((k) => k !== "__ghost");
+    return [...keys].sort((a, b) => {
+      const h = (key) => {
+        let x = Number(room?.seed || 0) + 2166136261;
+        for (let i = 0; i < key.length; i++) { x ^= key.charCodeAt(i); x = Math.imul(x, 16777619); }
+        x ^= x >>> 16; x = Math.imul(x, 2246822507); x ^= x >>> 13;
+        return x >>> 0;
+      };
+      return h(a) - h(b);
+    });
+  }
+
+  function getSideTrayPiecePosition(key) {
+    const p = piecesRef.current[key];
+    if (!room || !p) return null;
+    const keys = getRandomizedTrayKeys();
+    const index = keys.indexOf(key);
+    if (index < 0) return null;
+    const half = Math.ceil(keys.length / 2);
+    const left = index < half;
+    const localIndex = left ? index : index - half;
+    const columns = Math.max(1, Math.floor(220 / trayPieceWidth));
+    const col = localIndex % columns;
+    const row = Math.floor(localIndex / columns);
+    return {
+      left,
+      x: 10 + col * trayPieceWidth,
+      y: 38 + row * (Math.max(58, Math.min(92, room.boardH / Math.max(4, room.rows))) + 8),
+    };
+  }
 
   function formatTime(totalSeconds) {
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
@@ -1089,18 +1177,20 @@ export default function Game({
       roundRect(ctx, 1, 1, boardW - 2, boardH - 2, 18);
       ctx.stroke();
 
-      // Tepsi
-      const trayTop = boardH + 50;
-      ctx.fillStyle = isDark ? "#090909" : "#faf3f6";
-      roundRect(
-        ctx,
-        0,
-        trayTop,
-        boardW,
-        canvas.height - trayTop - 10,
-        18
-      );
-      ctx.fill();
+      if (!sideTrayMode) {
+        // Tepsi
+        const trayTop = boardH + 50;
+        ctx.fillStyle = isDark ? "#090909" : "#faf3f6";
+        roundRect(
+          ctx,
+          0,
+          trayTop,
+          boardW,
+          canvas.height - trayTop - 10,
+          18
+        );
+        ctx.fill();
+      }
 
       const pieceW = boardW / cols;
       const pieceH = boardH / rows;
@@ -1119,6 +1209,7 @@ export default function Game({
 
         const p = piecesRef.current[key];
         if (!p) continue;
+        if (sideTrayMode && !p.placed && !p.movedAt && !dynamicKeys.has(key)) continue;
 
         drawPiece(ctx, key, p, pieceW, pieceH, false);
       }
@@ -1245,6 +1336,38 @@ export default function Game({
       dynamicBoundsRef.current = [];
     };
   }, [room, players, showPreview, theme]);
+  function handleTrayPointerDown(e, key) {
+    if (!room || !sideTrayMode) return;
+    const p = piecesRef.current[key];
+    const canvas = canvasRef.current;
+    if (!p || p.placed || !canvas) return;
+    const pieceW = room.boardW / room.cols;
+    const pieceH = room.boardH / room.rows;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const px = (e.clientX - rect.left) * scaleX;
+    const py = (e.clientY - rect.top) * scaleY;
+    p.x = Math.max(0, Math.min(room.boardW - pieceW, px - pieceW / 2));
+    p.y = Math.max(0, Math.min(room.boardH - pieceH, py - pieceH / 2));
+    draggingRef.current = { key, offsetX: pieceW / 2, offsetY: pieceH / 2 };
+    setSelectedPieceKey(key);
+    zCounterRef.current += 1;
+    zOrderRef.current[key] = zCounterRef.current;
+    dynamicDirtyRef.current = true;
+    dirtyRef.current = true;
+    update(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`), { key, x: Math.round(p.x), y: Math.round(p.y), movedAt: Date.now() }).catch(() => {});
+    const move = (event) => handlePointerMove(event);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up, { once: true });
+    window.addEventListener("pointercancel", up, { once: true });
+  }
+
   function handlePointerDown(e) {
     if (e.button === 2) {
       e.preventDefault();
@@ -1545,6 +1668,8 @@ export default function Game({
     });
 
     remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
+    setTrayVersion(v => v + 1);
+    setSelectedPieceKey(null);
   }
 
   function findMissingPiece() {
@@ -1831,8 +1956,7 @@ export default function Game({
     );
   }
 
-  const canvasWidth =
-    room.boardW;
+  const canvasWidth = room.boardW;
 
   const trayTop =
     room.boardH + 50;
@@ -1844,12 +1968,11 @@ export default function Game({
   const trayCols = Math.max(5, Math.min(10, Math.ceil(Math.sqrt(totalPiecesForLayout(room.rows, room.cols) * 1.2))));
   const trayRows = Math.ceil((room.rows * room.cols) / trayCols);
 
-  const canvasHeight =
-    trayTop +
-    trayRows *
-      pieceH *
-      1.22 +
-    pieceH * 2;
+  const canvasHeight = sideTrayMode
+    ? room.boardH
+    : trayTop + trayRows * pieceH * 1.22 + pieceH * 2;
+  const canvasCssWidth = Math.max(260, Math.min(1400, 900 * zoom, sideTrayMode ? viewport.width - 324 : viewport.width - 20));
+  const canvasCssHeight = canvasHeight * (canvasCssWidth / canvasWidth);
 
   const total =
     progress.total ||
@@ -2016,22 +2139,29 @@ export default function Game({
         </div>
       </div>
 
-      {toast && <div className="toast">{toast}</div>}
-      {partnerReaction && <div className="reaction-toast">{partnerReaction.name}: {partnerReaction.text}</div>}
+      {(toast || partnerReaction || reaction) && (
+        <div className="game-live-feed" aria-live="polite">
+          {reaction && <div className="live-feed-item mine">Sen: {reaction}</div>}
+          {partnerReaction && <div className="live-feed-item">{partnerReaction.name}: {partnerReaction.text}</div>}
+          {toast && <div className="live-feed-item">{toast}</div>}
+        </div>
+      )}
 
       <div className="game-tools">
         <div className="tool-group"><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.1).toFixed(2)))}>−</button><span className="zoom-label">{Math.round(zoom * 100)}%</span><button className="btn tiny ghost" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button><button className="btn tiny ghost" onClick={() => setZoom(1)}>Sığdır</button></div><div className="reaction-group">{["Bulduğum!", "Yaklaştım", "Tamamdır"].map((r) => <button key={r} className="btn tiny ghost" onClick={async () => { setReaction(r); window.clearTimeout(window.__reactionTimer); window.__reactionTimer = window.setTimeout(() => setReaction(""), 1400); await set(ref(db, `rooms/${roomCode}/reactions/${playerId}`), { text: r, name: me?.name || "Sen", at: Date.now() }); }}>{r}</button>)}</div>
       </div>
 
-      <div
-        className="canvas-wrap"
-        style={{
-          position: "relative",
-          width: `${Math.min(1400, 900 * zoom)}px`,
-          height: `${canvasHeight * (Math.min(1400, 900 * zoom) / canvasWidth)}px`,
-          maxWidth: "none",
-        }}
-      >
+      <div className={`game-board-layout ${sideTrayMode ? "side-tray-layout" : "bottom-tray-layout"}`}>
+        {sideTrayMode && <div ref={leftTrayRef} className="side-tray side-tray-left" aria-label="Sol parça alanı" />}
+        <div
+          className="canvas-wrap"
+          style={{
+            position: "relative",
+            width: `${canvasCssWidth}px`,
+            height: `${canvasCssHeight}px`,
+            maxWidth: "none",
+          }}
+        >
         <canvas
           ref={staticCanvasRef}
           width={canvasWidth}
@@ -2069,14 +2199,12 @@ export default function Game({
           onPointerCancel={handlePointerUp}
           onContextMenu={(e) => e.preventDefault()}
         />
+        </div>
+        {sideTrayMode && <div ref={rightTrayRef} className="side-tray side-tray-right" aria-label="Sağ parça alanı" />}
       </div>
 
       <p className="hint">
-        Parçaları alttaki
-        tepsiden tahtaya
-        sürükle. Doğru yere
-        yakın bırakınca
-        kilitlenir.
+        {sideTrayMode ? "Parçalar iki yanda. Telefonu veya tableti yatay tutmak en rahat kullanım." : "Parçaları alttaki tepsiden tahtaya sürükle. Doğru yere yakın bırakınca kilitlenir."}
       </p>
 
       <button
