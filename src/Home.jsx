@@ -712,7 +712,6 @@ export default function Home({ onEnterRoom, user, playerName }) {
       }
       await set(ref(db, `rooms/${code}`), {
         ownerUid: user.uid,
-        // Spark plan: puzzle image stays as a compressed data URL in RTDB; Firebase Storage is intentionally not used.
         image: dataUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,

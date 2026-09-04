@@ -1485,28 +1485,31 @@ export default function Game({
 
     if (!p) return;
 
-    const threshold =
-      Math.min(
-        pieceW,
-        pieceH
-      ) * 0.4;
-
-    const dx =
+    // Parçanın sol-üst köşesini değil merkezini hedef hücrenin
+    // merkezine göre değerlendiriyoruz. Böylece kullanıcı parçayı
+    // hücreye yakın bıraktığında gereksiz yere tepsiye dönmüş gibi
+    // görünmez.
+    const centerDx =
       Math.abs(
-        p.x - correctX
+        (p.x + pieceW / 2) -
+        (correctX + pieceW / 2)
       );
 
-    const dy =
+    const centerDy =
       Math.abs(
-        p.y - correctY
+        (p.y + pieceH / 2) -
+        (correctY + pieceH / 2)
       );
+
+    const thresholdX = pieceW * 0.55;
+    const thresholdY = pieceH * 0.55;
 
     let placed = false;
 
     if (
       (Number(p.rotation) || 0) === 0 &&
-      dx < threshold &&
-      dy < threshold
+      centerDx < thresholdX &&
+      centerDy < thresholdY
     ) {
       p.x = correctX;
       p.y = correctY;
