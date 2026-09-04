@@ -721,7 +721,14 @@ export default function Home({ onEnterRoom, user, playerName, theme = "light", o
         image: imageUrl, imgWidth: width, imgHeight: height, rows, cols, seed, boardW, boardH,
         edges, difficulty: selected.id, difficultyName: selected.name, totalPieces: selected.pieces,
         rotatePieces: selected.rotate, hintsAllowed: selected.hints, previewAllowed: selected.preview,
-        createdAt: Date.now(), players: {},
+        createdAt: Date.now(),
+        players: {
+          [user.uid]: {
+            name: profile?.name || name.trim() || playerName || "Oyuncu",
+            connected: true,
+            joinedAt: Date.now(),
+          },
+        },
       });
       await set(ref(db, `rooms/${code}/pieces`), pieces);
       const nextRemaining = Math.max(0, (Number(puzzlesRemaining) || 3) - 1);
