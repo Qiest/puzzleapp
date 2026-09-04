@@ -1773,7 +1773,8 @@ export default function Game({
     });
 
     remove(ref(db, `rooms/${roomCode}/liveMoves/${playerId}`)).catch(() => {});
-    setSelectedPieceKey(null);
+    // Seçimi bırakma; oyuncu parçayı yerleştirdikten sonra da
+    // "Parçayı döndür" düğmesiyle son seçtiği parçayı çevirebilsin.
   }
 
   function findMissingPiece() {
